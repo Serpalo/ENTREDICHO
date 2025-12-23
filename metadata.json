@@ -1,0 +1,8 @@
+{
+  "name": "FILESTAGE ENTREDICHO",
+  "description": "Una plataforma avanzada para la revisión y aprobación de folletos, permitiendo gestionar versiones, revisiones por departamentos y flujos de aprobación hasta imprenta.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
