@@ -5,7 +5,6 @@ import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import PageReview from './pages/PageReview';
 import { Project, Folder, AppNotification } from './types';
-// CORRECCIÓN AQUÍ: Usamos ./ porque estamos en la raíz de src
 import { supabase } from './supabase';
 
 const App: React.FC = () => {
@@ -29,7 +28,8 @@ const App: React.FC = () => {
                 id: p.id.toString(),
                 pageNumber: p.page_number,
                 imageUrl: p.image_url,
-                // Leemos el estado real o ponemos el defecto
+                // AQUI LEEMOS LA V1 (IMAGEN ANTIGUA)
+                previousImageUrl: p.previous_image_url || null,
                 status: p.status || '1ª corrección', 
                 approvals: {},
                 comments: []
@@ -38,6 +38,7 @@ const App: React.FC = () => {
                 id: `legacy-${item.id}`,
                 pageNumber: 1,
                 imageUrl: item.image_url,
+                previousImageUrl: null,
                 status: '1ª corrección',
                 approvals: {},
                 comments: []
