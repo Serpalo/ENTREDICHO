@@ -5,7 +5,7 @@ import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import PageReview from './pages/PageReview';
 import { Project, Folder, AppNotification } from './types';
-import { supabase } from './supabase';
+import { supabase } from '../supabase';
 
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -13,40 +13,23 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [toasts, setToasts] = useState<AppNotification[]>([]);
 
-  // CARGAR DATOS DE SUPABASE (PROYECTOS, CARPETAS Y PÁGINAS)
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Cargar Proyectos
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data: projectsData } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      const { data: pagesData } = await supabase.from('pages').select('*').order('page_number', { ascending: true });
+      const { data: foldersData } = await supabase.from('folders').select('*').order('created_at', { ascending: true });
 
-      // 2. Cargar Páginas
-      const { data: pagesData } = await supabase
-        .from('pages')
-        .select('*')
-        .order('page_number', { ascending: true });
-
-      // 3. Cargar Carpetas
-      const { data: foldersData } = await supabase
-        .from('folders')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      // 4. Montar el puzzle
       if (projectsData) {
         const loadedProjects: Project[] = projectsData.map((item: any) => {
-          // Buscamos las páginas de este proyecto
           const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
           
-          // Si no hay páginas en la tabla nueva, miramos si tenía una antigua en 'image_url' (retrocompatibilidad)
           const finalPages = projectPages.length > 0 
             ? projectPages.map((p: any) => ({
                 id: p.id.toString(),
                 pageNumber: p.page_number,
                 imageUrl: p.image_url,
-                status: 'first_version',
+                // AQUI ESTA EL CAMBIO: Leemos el estado real de la base de datos
+                status: p.status || '1ª corrección', 
                 approvals: {},
                 comments: []
               }))
@@ -54,7 +37,7 @@ const App: React.FC = () => {
                 id: `legacy-${item.id}`,
                 pageNumber: 1,
                 imageUrl: item.image_url,
-                status: 'first_version',
+                status: '1ª corrección',
                 approvals: {},
                 comments: []
               }] : []);
@@ -64,17 +47,15 @@ const App: React.FC = () => {
             name: item.title,
             parentId: item.parent_id || null,
             type: 'project',
-            advertisingEmails: [], // Podrías guardarlos en DB si quisieras
+            advertisingEmails: [],
             productDirectionEmails: [],
-            versions: [
-               {
+            versions: [{
                  id: `v1-${item.id}`,
                  versionNumber: 1,
                  createdAt: new Date(item.created_at),
                  isActive: true,
                  pages: finalPages
-               }
-            ]
+            }]
           };
         });
         setProjects(loadedProjects);
@@ -95,20 +76,13 @@ const App: React.FC = () => {
   }, []);
 
   const addNotification = (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotif: AppNotification = {
-      ...notif,
-      id: `n-${Date.now()}`,
-      timestamp: new Date(),
-      read: false
-    };
+    const newNotif: AppNotification = { ...notif, id: `n-${Date.now()}`, timestamp: new Date(), read: false };
     setNotifications(prev => [newNotif, ...prev]);
     setToasts(prev => [...prev, newNotif]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== newNotif.id)), 5000);
   };
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  };
+  const markAllAsRead = () => { setNotifications(prev => prev.map(n => ({ ...n, read: true }))); };
 
   return (
     <HashRouter>
