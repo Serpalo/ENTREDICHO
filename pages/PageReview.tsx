@@ -9,15 +9,7 @@ interface PageReviewProps {
   addNotification?: (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
 }
 
-interface Comment {
-  id: string;
-  content: string;
-  created_at: string;
-  page_id: string;
-  x?: number;
-  y?: number;
-  resolved?: boolean;
-}
+interface Comment { id: string; content: string; created_at: string; page_id: string; x?: number; y?: number; resolved?: boolean; }
 
 const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotification }) => {
   const { projectId, versionId, pageId } = useParams<{ projectId: string; versionId: string; pageId: string }>();
@@ -40,6 +32,12 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
   const project = projects.find(p => p.id === projectId);
+  
+  // VERIFICAR SI LA REVISIÓN ESTÁ BLOQUEADA POR FECHA
+  const isReviewLocked = project && (project as any).review_deadline 
+    ? new Date() > new Date((project as any).review_deadline) 
+    : false;
+
   let version: any = null;
   let page: any = null;
   if (project) {
@@ -59,16 +57,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const fetchPreviousVersion = async () => {
     if (!page || !page.version || page.version <= 1) return;
-    const { data } = await supabase
-      .from('pages')
-      .select('image_url')
-      .eq('project_id', projectId)
-      .eq('page_number', page.pageNumber)
-      .lt('version', page.version) 
-      .order('version', { ascending: false }) 
-      .limit(1)
-      .single();
-
+    const { data } = await supabase.from('pages').select('image_url').eq('project_id', projectId).eq('page_number', page.pageNumber).lt('version', page.version).order('version', { ascending: false }).limit(1).single();
     if (data) setPreviousPageUrl(data.image_url);
   };
 
@@ -103,7 +92,8 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isPinMode || !imageContainerRef.current) return;
+    // Si está bloqueado, no permitimos poner chinchetas
+    if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
@@ -120,12 +110,16 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleDeleteComment = async (id: string) => {
+    // Solo permitimos borrar si NO está bloqueado
+    if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
     const { error } = await supabase.from('comments').delete().eq('id', id);
     if (!error) { setCommentsList(prev => prev.filter(c => c.id !== id)); if (activePinId === id) setActivePinId(null); }
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
+    // Solo permitimos resolver si NO está bloqueado
+    if (isReviewLocked) return;
     const newStatus = !currentStatus;
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
     const { error } = await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
@@ -145,7 +139,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
             <h1 className="font-black text-slate-800 text-lg">{project.name}</h1>
             <div className="flex items-center gap-2">
                  <p className="text-[10px] font-bold text-slate-400 uppercase">Revisión v{version.versionNumber}</p>
-                 {isCompareMode && <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded border border-amber-200 animate-pulse">MODO COMPARADOR ACTIVO</span>}
+                 {isReviewLocked && <span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded animate-pulse">REVISIÓN CERRADA</span>}
             </div>
           </div>
         </div>
@@ -164,11 +158,12 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 </button>
             )}
 
-           {/* CAMBIO: bg-rose-600 y textos hover rojo */}
-           <button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-600'}`}>
-             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-             {isPinMode ? 'Cancelar' : 'Poner Nota'}
-           </button>
+           {!isReviewLocked && (
+               <button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-600'}`}>
+                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                 {isPinMode ? 'Cancelar' : 'Poner Nota'}
+               </button>
+           )}
         </div>
       </header>
 
@@ -193,7 +188,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
             {!isCompareMode && (
                 <>
-                    {/* CAMBIO: bg-rose-500/10 y bordes rojos */}
                     {isPinMode && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
                     {commentsList.map((c) => (
                         <div key={c.id} onClick={(e) => { e.stopPropagation(); setActivePinId(activePinId === c.id ? null : c.id); }} className="absolute w-8 h-8 -ml-4 -mt-8 z-20 cursor-pointer group hover:z-30" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
@@ -207,15 +201,19 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         </div>
 
         <aside className="w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-2xl z-40">
+          {isReviewLocked && !tempPin && (
+              <div className="p-4 bg-red-50 border-b border-red-100 text-center">
+                  <p className="text-red-700 font-bold text-xs uppercase tracking-widest">⚠️ PLAZO FINALIZADO</p>
+                  <p className="text-red-500 text-[10px] mt-1">No se pueden añadir ni modificar notas.</p>
+              </div>
+          )}
+
           {tempPin ? (
-            // CAMBIO: bg-rose-50 y bordes rojos
             <div className="p-6 bg-rose-50 border-b border-rose-100 h-full flex flex-col">
               <div className="flex items-center gap-2 mb-4 text-rose-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div>
-              {/* CAMBIO: focus:ring-rose-200 */}
               <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-rose-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-rose-200 outline-none transition-all shadow-inner mb-4" />
               <div className="flex gap-2">
                 <button onClick={() => setTempPin(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                {/* CAMBIO: bg-rose-600 y shadow-rose-200 */}
                 <button onClick={handleSavePin} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all">Guardar</button>
               </div>
             </div>
@@ -223,18 +221,18 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
             <>
               <div className="p-5 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Notas ({commentsList.length})</h3>
-                <button onClick={() => { setIsPinMode(true); setTempPin(null); setIsCompareMode(false); }} className="text-[10px] bg-rose-50 text-rose-600 px-3 py-1 rounded-full font-bold hover:bg-rose-100 transition-colors">+ Añadir</button>
+                {!isReviewLocked && <button onClick={() => { setIsPinMode(true); setTempPin(null); setIsCompareMode(false); }} className="text-[10px] bg-rose-50 text-rose-600 px-3 py-1 rounded-full font-bold hover:bg-rose-100 transition-colors">+ Añadir</button>}
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
                 {commentsList.map((c) => (
                   <div key={c.id} onClick={() => setActivePinId(c.id)} className={`group relative p-4 rounded-xl border transition-all ${activePinId === c.id ? 'ring-2 ring-offset-1' : ''} ${c.resolved ? 'bg-emerald-50 border-emerald-200 ring-emerald-200' : 'bg-rose-50 border-rose-200 ring-rose-200'}`}>
                     <div className="flex items-start gap-3">
-                      <div className="mt-1"><input type="checkbox" checked={c.resolved || false} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"/></div>
+                      <div className="mt-1"><input type="checkbox" checked={c.resolved || false} disabled={isReviewLocked} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"/></div>
                       <div className="flex-1">
                         <p className={`text-sm font-medium leading-relaxed ${c.resolved ? 'text-emerald-800 line-through opacity-70' : 'text-rose-900'}`}>{c.content}</p>
                         <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                      {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
                     </div>
                   </div>
                 ))}
