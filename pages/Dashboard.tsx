@@ -111,14 +111,12 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
   const breadcrumbs = getBreadcrumbs();
 
-  // --- 1. FUNCIÓN CREAR CARPETA (CONECTADA A SUPABASE) ---
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
       setIsCreatingFolder(false);
       return;
     }
     
-    // Guardar en Supabase
     const { data, error } = await supabase
       .from('folders')
       .insert([{ name: newFolderName, parent_id: currentFolderId }])
@@ -126,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
     if (error) {
       console.error('Error creando carpeta:', error);
-      alert('No se pudo crear la carpeta.');
+      alert('No se pudo crear la carpeta en la base de datos.');
       return;
     }
 
@@ -162,21 +160,48 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     setIsRenaming(null);
   };
 
-  const confirmDelete = () => {
+  // --- FUNCIÓN BORRAR CORREGIDA (AHORA BORRA DE SUPABASE) ---
+  const confirmDelete = async () => {
     if (!itemToDelete) return;
-    if (itemToDelete.type === 'folder') {
-      const deleteRecursive = (id: string, allFolders: Folder[]): string[] => {
-        const ids = [id];
-        const children = allFolders.filter(f => f.parentId === id);
-        children.forEach(c => ids.push(...deleteRecursive(c.id, allFolders)));
-        return ids;
-      };
-      const folderIdsToRemove = deleteRecursive(itemToDelete.id, folders);
-      setFolders(prev => prev.filter(f => !folderIdsToRemove.includes(f.id)));
-      setProjects(prev => prev.filter(p => !folderIdsToRemove.includes(p.parentId || '')));
-    } else {
-      setProjects(prev => prev.filter(p => p.id !== itemToDelete.id));
+
+    try {
+      if (itemToDelete.type === 'folder') {
+        // 1. Borrar de Supabase (Tabla Folders)
+        const { error } = await supabase
+          .from('folders')
+          .delete()
+          .eq('id', itemToDelete.id);
+
+        if (error) throw error;
+
+        // 2. Actualizar Pantalla (Recursivo visual)
+        const deleteRecursive = (id: string, allFolders: Folder[]): string[] => {
+          const ids = [id];
+          const children = allFolders.filter(f => f.parentId === id);
+          children.forEach(c => ids.push(...deleteRecursive(c.id, allFolders)));
+          return ids;
+        };
+        const folderIdsToRemove = deleteRecursive(itemToDelete.id, folders);
+        setFolders(prev => prev.filter(f => !folderIdsToRemove.includes(f.id)));
+        setProjects(prev => prev.filter(p => !folderIdsToRemove.includes(p.parentId || '')));
+
+      } else {
+        // 1. Borrar de Supabase (Tabla Projects)
+        const { error } = await supabase
+          .from('projects')
+          .delete()
+          .eq('id', itemToDelete.id);
+
+        if (error) throw error;
+
+        // 2. Actualizar Pantalla
+        setProjects(prev => prev.filter(p => p.id !== itemToDelete.id));
+      }
+    } catch (err) {
+      console.error('Error al borrar:', err);
+      alert('Error al borrar de la base de datos.');
     }
+    
     setItemToDelete(null);
   };
 
@@ -186,13 +211,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     setItemToDelete(item);
   };
 
-  // --- 2. FUNCIÓN SUBIR ARCHIVO (CON LA CARPETA CORRECTA) ---
   const handleFilesUpload = async (files: FileList | File[], targetFolderId: string | null = currentFolderId) => {
     const file = files[0];
     if (!file) return;
 
     const projectName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
-    const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+    // Limpiamos caracteres raros del nombre del archivo para que no falle al subir
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${Date.now()}-${cleanFileName}`;
 
     try {
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -201,7 +227,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
       if (uploadError) {
         console.error('Error storage:', uploadError);
-        alert('Error al subir imagen.');
+        alert('Error al subir archivo. Revisa si tu bucket "brochures" permite archivos PDF e imágenes.');
         return;
       }
 
@@ -209,7 +235,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         .from('brochures')
         .getPublicUrl(fileName);
 
-      // AÑADIMOS 'parent_id' AQUÍ PARA QUE SE GUARDE DENTRO DE LA CARPETA
       const { data, error } = await supabase
         .from('projects')
         .insert([
@@ -218,13 +243,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
             status: 'active', 
             description: 'Subido desde Dashboard',
             image_url: publicUrl,
-            parent_id: targetFolderId // <--- ESTO ES LA CLAVE
+            parent_id: targetFolderId 
           }
         ])
         .select();
 
       if (error) {
         console.error('Error DB:', error);
+        alert('Error al guardar el proyecto en la base de datos.');
         return;
       }
 
@@ -637,12 +663,22 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
               ))}
               {currentProjects.map(p => {
                 const period = getPeriodStatus(p);
+                // DETECTAR SI ES PDF
+                const isPdf = p.versions[p.versions.length-1]?.pages[0]?.imageUrl?.toLowerCase().includes('.pdf');
+                
                 return (
                   <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="group relative bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-lg hover:border-indigo-200 transition-all cursor-pointer hover:-translate-y-1 overflow-hidden">
                     <div className="flex items-start justify-between mb-4">
-                      <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner overflow-hidden">
+                      <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner overflow-hidden relative">
                         {p.versions[p.versions.length-1]?.pages[0] ? (
-                          <img src={p.versions[p.versions.length-1].pages[0].imageUrl} className="w-full h-full object-cover opacity-50 group-hover:opacity-100 transition-opacity" />
+                          isPdf ? (
+                            <div className="flex flex-col items-center justify-center text-rose-500 bg-rose-50 w-full h-full">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                <span className="text-[8px] font-bold uppercase mt-1">PDF</span>
+                            </div>
+                          ) : (
+                            <img src={p.versions[p.versions.length-1].pages[0].imageUrl} className="w-full h-full object-cover opacity-50 group-hover:opacity-100 transition-opacity" />
+                          )
                         ) : (
                           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                         )}
