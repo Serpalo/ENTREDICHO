@@ -13,15 +13,23 @@ const Navbar: React.FC<NavbarProps> = ({ notifications, markAllAsRead }) => {
 
   return (
     <nav className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-[100] shadow-sm">
-      
-      {/* --- LOGO CON EL TRUCO ANTI-CACHÉ --- */}
       <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
         <img 
-            src="/logo.png?v=2"  // <--- ¡AQUÍ ESTÁ EL TRUCO! El ?v=2 obliga a recargar la imagen
-            alt="Logo Cliente" 
+            src="/logo.png?v=2" 
+            alt="Logo" 
             className="h-12 w-auto object-contain"
-            // He quitado el ocultador automático para que veas si sale el icono de "imagen rota" o la imagen real
+            onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.parentElement?.querySelector('.fallback-logo')?.classList.remove('hidden');
+            }} 
         />
+        <div className="fallback-logo hidden flex items-center gap-2">
+            {/* CAMBIO: bg-rose-600 */}
+            <div className="bg-rose-600 text-white p-1.5 rounded-lg">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            </div>
+            <span className="font-black text-xl text-slate-800 tracking-tight">BrochureFlow</span>
+        </div>
       </Link>
 
       <div className="flex items-center gap-6">
@@ -41,16 +49,19 @@ const Navbar: React.FC<NavbarProps> = ({ notifications, markAllAsRead }) => {
               <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                 <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                   <h3 className="font-bold text-sm text-slate-700">Notificaciones</h3>
-                  {unreadCount > 0 && <button onClick={markAllAsRead} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700">Marcar leídas</button>}
+                  {/* CAMBIO: text-rose-600 */}
+                  {unreadCount > 0 && <button onClick={markAllAsRead} className="text-[10px] font-bold text-rose-600 hover:text-rose-700">Marcar leídas</button>}
                 </div>
                 <div className="max-h-[300px] overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 text-xs">No tienes notificaciones nuevas</div>
                   ) : (
                     notifications.map(n => (
-                      <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.read ? 'bg-indigo-50/30' : ''}`}>
+                      /* CAMBIO: bg-rose-50 */
+                      <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.read ? 'bg-rose-50/50' : ''}`}>
                         <div className="flex gap-3">
-                           <div className={`w-2 h-2 mt-1.5 rounded-full flex-shrink-0 ${!n.read ? 'bg-indigo-500' : 'bg-slate-200'}`}></div>
+                           {/* CAMBIO: bg-rose-500 */}
+                           <div className={`w-2 h-2 mt-1.5 rounded-full flex-shrink-0 ${!n.read ? 'bg-rose-500' : 'bg-slate-200'}`}></div>
                            <div>
                              <p className="text-xs font-bold text-slate-800 mb-0.5">{n.title}</p>
                              <p className="text-xs text-slate-500 leading-snug">{n.message}</p>
