@@ -21,51 +21,48 @@ const App: React.FC = () => {
 
       if (projectsData) {
         const loadedProjects: Project[] = projectsData.map((item: any) => {
-          // 1. Buscamos todas las páginas de este proyecto
-          const allPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
+          const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
           
-          // 2. Las agrupamos por VERSIÓN (V1, V2, V3...)
           const versionsMap: Record<number, any[]> = {};
           
-          if (allPages.length > 0) {
-            allPages.forEach((p: any) => {
-              const vNum = p.version || 1; // Si no tiene versión, es la 1
+          if (projectPages.length > 0) {
+            projectPages.forEach((p: any) => {
+              const vNum = p.version || 1; 
               if (!versionsMap[vNum]) versionsMap[vNum] = [];
               versionsMap[vNum].push({
                 id: p.id.toString(),
                 pageNumber: p.page_number,
                 imageUrl: p.image_url,
+                // --- AQUI ESTABA EL FALLO: AÑADIMOS EL DATO DE LA VERSIÓN ---
+                version: vNum, 
                 status: p.status || '1ª corrección', 
                 approvals: {},
                 comments: []
               });
             });
           } else if (item.image_url) {
-            // Compatibilidad antigua
             versionsMap[1] = [{
               id: `legacy-${item.id}`,
               pageNumber: 1,
               imageUrl: item.image_url,
+              version: 1,
               status: '1ª corrección',
               approvals: {},
               comments: []
             }];
           }
 
-          // 3. Convertimos el mapa en el array de versiones que necesita la app
-          // Ordenamos las versiones de mayor a menor (la más nueva primero)
           const versionsList = Object.keys(versionsMap)
             .map(vNum => Number(vNum))
             .sort((a, b) => b - a)
             .map(vNum => ({
                id: `v${vNum}-${item.id}`,
                versionNumber: vNum,
-               createdAt: new Date(item.created_at), // Idealmente cada versión tendría su fecha
+               createdAt: new Date(item.created_at),
                isActive: true,
                pages: versionsMap[vNum].sort((a, b) => a.pageNumber - b.pageNumber)
             }));
 
-          // Si no hay versiones, creamos una vacía V1
           if (versionsList.length === 0) {
              versionsList.push({ id: `v1-${item.id}`, versionNumber: 1, createdAt: new Date(), isActive: true, pages: [] });
           }
