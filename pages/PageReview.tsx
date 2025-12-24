@@ -52,17 +52,14 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   let version: any = null;
   let page: any = null;
-  // Variables para navegación entre páginas
   let prevPageId: string | null = null;
   let nextPageId: string | null = null;
 
   if (project) {
     version = project.versions.find(v => v.id === versionId);
     if (version) {
-        // Ordenamos las páginas para asegurar la secuencia correcta
         const sortedPages = [...version.pages].sort((a, b) => a.pageNumber - b.pageNumber);
         const currentIndex = sortedPages.findIndex((p: any) => p.id === pageId);
-        
         if (currentIndex !== -1) {
             page = sortedPages[currentIndex];
             if (currentIndex > 0) prevPageId = sortedPages[currentIndex - 1].id;
@@ -74,10 +71,38 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   useEffect(() => {
     if (pageId) {
         fetchComments();
-        // Resetear vista al cambiar de página
         setTransform({ scale: 1, x: 0, y: 0 });
         setIsPinMode(false);
         setTempPin(null);
+
+        // --- CANAL ÚNICO POR PÁGINA ---
+        const channelName = `room-${pageId}`; 
+        const channel = supabase
+          .channel(channelName)
+          .on('postgres_changes', 
+            { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
+            (payload) => {
+             // Procesar cambios que vienen del servidor (otra persona)
+             if (payload.eventType === 'INSERT') {
+                setCommentsList((prev) => {
+                    // Evitar duplicados si ya lo añadimos nosotros localmente
+                    if (prev.find(c => c.id === payload.new.id)) return prev;
+                    if (addNotification) addNotification({ type: 'system', title: 'Nueva corrección', message: 'Se ha añadido una nota.' });
+                    return [payload.new as Comment, ...prev];
+                });
+             } else if (payload.eventType === 'DELETE') {
+                setCommentsList((prev) => prev.filter(c => c.id !== payload.old.id));
+             } else if (payload.eventType === 'UPDATE') {
+                setCommentsList((prev) => prev.map(c => c.id === payload.new.id ? (payload.new as Comment) : c));
+             }
+          })
+          .subscribe((status) => {
+              if (status === 'SUBSCRIBED') console.log("🟢 Conectado a tiempo real en " + channelName);
+          });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     } 
     if (page) fetchPreviousVersion();
   }, [pageId, page]);
@@ -160,11 +185,14 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         attachment_url: uploadedUrl 
     };
 
+    // 1. Guardar en Base de Datos
     const { data, error } = await supabase.from('comments').insert([newComment]).select();
     setIsUploadingAttachment(false);
 
-    if (error) alert('Error: ' + error.message);
-    else if (data) {
+    if (error) {
+      alert('Error: ' + error.message);
+    } else if (data) {
+      // 2. Actualizar LOCALMENTE inmediatamente (para que tú lo veas rápido)
       setCommentsList(prev => [data[0], ...prev]);
       setComment("");
       setAttachment(null);
@@ -176,16 +204,22 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const handleDeleteComment = async (id: string) => {
     if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
-    const { error } = await supabase.from('comments').delete().eq('id', id);
-    if (!error) { setCommentsList(prev => prev.filter(c => c.id !== id)); if (activePinId === id) setActivePinId(null); }
+    
+    // Optimistic Update
+    setCommentsList(prev => prev.filter(c => c.id !== id));
+    if (activePinId === id) setActivePinId(null);
+
+    await supabase.from('comments').delete().eq('id', id);
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
     if (isReviewLocked) return;
     const newStatus = !currentStatus;
+    
+    // Optimistic Update
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
-    const { error } = await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
-    if (error) setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: currentStatus } : c));
+    
+    await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
   };
 
   const navigateToPage = (targetPageId: string | null) => {
@@ -216,23 +250,12 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         </div>
         
         <div className="flex items-center gap-3">
-            {/* FLECHAS DE NAVEGACIÓN */}
             <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2">
-                <button 
-                    onClick={() => navigateToPage(prevPageId)} 
-                    disabled={!prevPageId}
-                    className={`p-2 rounded transition-colors ${!prevPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`}
-                    title="Página Anterior"
-                >
+                <button onClick={() => navigateToPage(prevPageId)} disabled={!prevPageId} className={`p-2 rounded transition-colors ${!prevPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`} title="Página Anterior">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                 </button>
                 <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                <button 
-                    onClick={() => navigateToPage(nextPageId)} 
-                    disabled={!nextPageId}
-                    className={`p-2 rounded transition-colors ${!nextPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`}
-                    title="Página Siguiente"
-                >
+                <button onClick={() => navigateToPage(nextPageId)} disabled={!nextPageId} className={`p-2 rounded transition-colors ${!nextPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`} title="Página Siguiente">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </button>
             </div>
