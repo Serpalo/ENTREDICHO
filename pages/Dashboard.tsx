@@ -2,6 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Project, Folder, FileSystemItem, AppNotification } from '../types';
+import { supabase } from '../supabase';
 
 interface DashboardProps {
   projects: Project[];
