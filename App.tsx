@@ -5,7 +5,8 @@ import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import PageReview from './pages/PageReview';
 import { Project, Folder, AppNotification } from './types';
-import { supabase } from '../supabase';
+// CORRECCIÓN AQUÍ: Usamos ./ porque estamos en la raíz de src
+import { supabase } from './supabase';
 
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -28,7 +29,7 @@ const App: React.FC = () => {
                 id: p.id.toString(),
                 pageNumber: p.page_number,
                 imageUrl: p.image_url,
-                // AQUI ESTA EL CAMBIO: Leemos el estado real de la base de datos
+                // Leemos el estado real o ponemos el defecto
                 status: p.status || '1ª corrección', 
                 approvals: {},
                 comments: []
