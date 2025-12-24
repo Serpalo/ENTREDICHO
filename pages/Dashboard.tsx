@@ -179,19 +179,53 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const handleFilesUpload = async (files: FileList | File[], targetFolderId: string | null = currentFolderId) => {
     const file = files[0];
     if (!file) return;
+
+    // 1. Preparamos el nombre
     const projectName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
-    const projectId = `p-${Date.now()}`;
-    const newProject: Project = {
-      id: projectId,
-      name: projectName,
-      parentId: targetFolderId,
-      type: 'project',
-      versions: [],
-      advertisingEmails: [],
-      productDirectionEmails: []
-    };
-    setProjects(prev => [...prev, newProject]);
-    setTimeout(() => navigate(`/project/${projectId}`), 100);
+
+    try {
+      // 2. GUARDAR EN SUPABASE (Insertamos en la tabla 'projects')
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([
+          { 
+            title: projectName, 
+            status: 'active', 
+            description: 'Subido desde Dashboard' 
+          }
+        ])
+        .select(); // Importante: pedimos que nos devuelva el dato creado (con su ID)
+
+      if (error) {
+        console.error('Error al guardar en Supabase:', error);
+        alert('Hubo un error al guardar el proyecto en la nube.');
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const savedProject = data[0];
+        const realId = savedProject.id.toString();
+
+        // 3. ACTUALIZAR ESTADO LOCAL (Con el ID real de la base de datos)
+        const newProject: Project = {
+          id: realId,
+          name: projectName,
+          parentId: targetFolderId,
+          type: 'project',
+          versions: [],
+          advertisingEmails: [],
+          productDirectionEmails: []
+        };
+
+        setProjects(prev => [newProject, ...prev]);
+        
+        // 4. Navegar al nuevo proyecto
+        setTimeout(() => navigate(`/project/${realId}`), 100);
+      }
+
+    } catch (err) {
+      console.error('Error inesperado:', err);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
