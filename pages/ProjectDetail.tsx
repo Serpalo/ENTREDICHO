@@ -11,7 +11,7 @@ interface ProjectDetailProps {
 
 type ViewMode = 'grid' | 'list';
 
-// Definición de estados y sus colores
+// COLORES DE LOS ESTADOS
 const STATUS_OPTIONS = {
   '1ª corrección': 'bg-amber-100 text-amber-700 border-amber-200',
   '2ª corrección': 'bg-orange-100 text-orange-700 border-orange-200',
@@ -22,7 +22,7 @@ const STATUS_OPTIONS = {
 const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<ViewMode>('list'); // Empezamos en lista que es más útil ahora
+  const [viewMode, setViewMode] = useState<ViewMode>('list'); 
   const [commentsCount, setCommentsCount] = useState<Record<string, number>>({});
 
   const project = projects.find(p => p.id === projectId);
@@ -35,8 +35,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   }, [project]);
 
   const fetchCommentsCount = async () => {
-    // Traemos todos los comentarios de las páginas de este proyecto
-    // (Optimizacion: En una app real haríamos un count por pagina, aquí traemos todo para simplificar)
     const pageIds = project?.versions[0]?.pages.map(p => p.id) || [];
     if (pageIds.length === 0) return;
 
@@ -112,7 +110,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
 
         <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 shadow-inner">
             <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`} title="Vista Cuadrícula">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z" /></svg>
             </button>
             <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`} title="Vista Lista">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
