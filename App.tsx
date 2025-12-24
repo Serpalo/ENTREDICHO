@@ -22,6 +22,7 @@ const App: React.FC = () => {
       if (projectsData) {
         const loadedProjects: Project[] = projectsData.map((item: any) => {
           const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
+          
           const versionsMap: Record<number, any[]> = {};
           
           if (projectPages.length > 0) {
@@ -38,12 +39,22 @@ const App: React.FC = () => {
                 comments: []
               });
             });
+          } else if (item.image_url) {
+            versionsMap[1] = [{
+              id: `legacy-${item.id}`,
+              pageNumber: 1,
+              imageUrl: item.image_url,
+              version: 1,
+              status: '1ª corrección',
+              approvals: {},
+              comments: []
+            }];
           }
 
-          // --- CRUCIAL: ORDENAR DE 1 A N (IZQUIERDA A DERECHA) ---
+          // ORDENAMOS DE MENOR A MAYOR (1, 2, 3...)
           const versionsList = Object.keys(versionsMap)
             .map(vNum => Number(vNum))
-            .sort((a, b) => a - b) // Orden Ascendente: 1, 2, 3...
+            .sort((a, b) => a - b) 
             .map(vNum => ({
                id: `v${vNum}-${item.id}`,
                versionNumber: vNum,
@@ -79,6 +90,7 @@ const App: React.FC = () => {
         setFolders(loadedFolders);
       }
     };
+
     fetchData();
   }, []);
 
