@@ -22,7 +22,6 @@ const App: React.FC = () => {
       if (projectsData) {
         const loadedProjects: Project[] = projectsData.map((item: any) => {
           const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
-          
           const versionsMap: Record<number, any[]> = {};
           
           if (projectPages.length > 0) {
@@ -33,28 +32,18 @@ const App: React.FC = () => {
                 id: p.id.toString(),
                 pageNumber: p.page_number,
                 imageUrl: p.image_url,
-                // --- AQUI ESTABA EL FALLO: AÑADIMOS EL DATO DE LA VERSIÓN ---
                 version: vNum, 
                 status: p.status || '1ª corrección', 
                 approvals: {},
                 comments: []
               });
             });
-          } else if (item.image_url) {
-            versionsMap[1] = [{
-              id: `legacy-${item.id}`,
-              pageNumber: 1,
-              imageUrl: item.image_url,
-              version: 1,
-              status: '1ª corrección',
-              approvals: {},
-              comments: []
-            }];
           }
 
+          // --- CRUCIAL: ORDENAR DE 1 A N (IZQUIERDA A DERECHA) ---
           const versionsList = Object.keys(versionsMap)
             .map(vNum => Number(vNum))
-            .sort((a, b) => b - a)
+            .sort((a, b) => a - b) // Orden Ascendente: 1, 2, 3...
             .map(vNum => ({
                id: `v${vNum}-${item.id}`,
                versionNumber: vNum,
@@ -90,7 +79,6 @@ const App: React.FC = () => {
         setFolders(loadedFolders);
       }
     };
-
     fetchData();
   }, []);
 
