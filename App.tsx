@@ -22,7 +22,6 @@ const App: React.FC = () => {
       if (projectsData) {
         const loadedProjects: Project[] = projectsData.map((item: any) => {
           const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
-          
           const versionsMap: Record<number, any[]> = {};
           
           if (projectPages.length > 0) {
@@ -39,19 +38,8 @@ const App: React.FC = () => {
                 comments: []
               });
             });
-          } else if (item.image_url) {
-            versionsMap[1] = [{
-              id: `legacy-${item.id}`,
-              pageNumber: 1,
-              imageUrl: item.image_url,
-              version: 1,
-              status: '1ª corrección',
-              approvals: {},
-              comments: []
-            }];
           }
 
-          // ORDENAMOS DE MENOR A MAYOR (1, 2, 3...)
           const versionsList = Object.keys(versionsMap)
             .map(vNum => Number(vNum))
             .sort((a, b) => a - b) 
@@ -90,7 +78,6 @@ const App: React.FC = () => {
         setFolders(loadedFolders);
       }
     };
-
     fetchData();
   }, []);
 
@@ -111,7 +98,8 @@ const App: React.FC = () => {
           {toasts.map(toast => (
              <div key={toast.id} className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 pointer-events-auto animate-in slide-in-from-right fade-in duration-300">
                <div className="flex gap-3">
-                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${toast.type === 'system' ? 'bg-indigo-600 text-white' : 'bg-emerald-50 text-emerald-600'}`}>
+                 {/* CAMBIO AQUÍ: bg-rose-600 en lugar de indigo */}
+                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${toast.type === 'system' ? 'bg-rose-600 text-white' : 'bg-emerald-50 text-emerald-600'}`}>
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                  </div>
                  <div className="flex-1 min-w-0">
