@@ -32,20 +32,19 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     setIsUploading(true);
-    setShowUploadModal(false); // Cerramos el modal
+    setShowUploadModal(false);
 
     const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const projectName = files[0].name.split('.')[0].replace(/[-_]/g, ' ');
 
     try {
-      // GUARDAMOS LA FECHA LÍMITE (review_deadline)
       const { data: projectData, error: projError } = await supabase
         .from('projects')
         .insert([{ 
             title: projectName, 
             parent_id: folderId || null, 
             status: 'active',
-            review_deadline: deadline || null // <--- AQUÍ SE GUARDA LA FECHA
+            review_deadline: deadline || null
         }])
         .select();
 
@@ -62,7 +61,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         if (pageData) newPages.push({ id: pageData[0].id.toString(), pageNumber: i + 1, imageUrl: publicUrl, status: '1ª corrección', approvals: {}, comments: [] });
       }
 
-      // Necesitamos recargar para traer el campo deadline, o lo simulamos
       window.location.reload(); 
 
     } catch (error) {
@@ -91,6 +89,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     if (!window.confirm("¿Seguro que quieres eliminar este proyecto?")) return;
     const { error } = await supabase.from('projects').delete().eq('id', id);
     if (!error) setProjects(prev => prev.filter(p => p.id !== id));
+  };
+
+  // --- NUEVA FUNCIÓN PARA BORRAR CARPETAS ---
+  const handleDeleteFolder = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Seguro que quieres eliminar esta carpeta? Se borrará todo su contenido.")) return;
+    const { error } = await supabase.from('folders').delete().eq('id', id);
+    if (!error) setFolders(prev => prev.filter(f => f.id !== id));
   };
 
   const getBreadcrumbs = () => {
@@ -177,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
             <div className="flex gap-3">
                 <div className="flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                     <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                     </button>
                     <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -197,7 +203,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                     </div>
                 )}
 
-                {/* BOTÓN ABRE EL MODAL, NO EL INPUT DIRECTAMENTE */}
                 <button onClick={() => !isUploading && setShowUploadModal(true)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm text-white shadow-xl hover:-translate-y-1 transition-all ${isUploading ? 'bg-slate-400 cursor-wait' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
                     {isUploading ? 'Subiendo...' : 'Subir Folleto'}
                     {!isUploading && <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
@@ -207,17 +212,23 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
         {viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
+                {/* --- CARPETAS EN GRID (Con papelera) --- */}
                 {filteredFolders.map(folder => (
                     <div key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-rose-100 transition-all cursor-pointer">
                         <div className="flex justify-between items-start mb-4">
                             <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform">
                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                             </div>
+                            <button onClick={(e) => handleDeleteFolder(folder.id, e)} className="text-slate-300 hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
                         </div>
                         <h3 className="font-bold text-slate-800 truncate">{folder.name}</h3>
                         <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Carpeta</p>
                     </div>
                 ))}
+                
+                {/* --- PROYECTOS EN GRID --- */}
                 {filteredProjects.map(project => {
                     const currentVersion = project.versions[0];
                     const coverImage = currentVersion?.pages[0]?.imageUrl;
@@ -233,7 +244,9 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                                     <h3 className="font-bold text-slate-900 truncate leading-tight">{project.name}</h3>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Folleto</p>
                                 </div>
-                                <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 transition-colors"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
                             </div>
                         </div>
                     );
@@ -250,6 +263,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
+                        {/* --- LISTA DE CARPETAS --- */}
                         {filteredFolders.map(folder => (
                             <tr key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
                                 <td className="px-8 py-4">
@@ -259,9 +273,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                                     </div>
                                 </td>
                                 <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Carpeta</td>
-                                <td className="px-8 py-4 text-right"><span className="text-slate-300 text-xs">Abrir &rarr;</span></td>
+                                <td className="px-8 py-4 text-right">
+                                    <button onClick={(e) => handleDeleteFolder(folder.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </td>
                             </tr>
                         ))}
+                        {/* --- LISTA DE PROYECTOS --- */}
                         {filteredProjects.map(project => (
                             <tr key={project.id} onClick={() => navigate(`/project/${project.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
                                 <td className="px-8 py-4">
@@ -274,7 +293,9 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                                 </td>
                                 <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Folleto</td>
                                 <td className="px-8 py-4 text-right">
-                                    <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                    <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
                                 </td>
                             </tr>
                         ))}
