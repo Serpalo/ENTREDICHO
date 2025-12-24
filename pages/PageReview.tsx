@@ -68,49 +68,52 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
+  // Función para cargar comentarios (reutilizable)
+  const fetchComments = async () => {
+    if (!pageId) return;
+    const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
+    if (data) {
+        // Solo actualizamos si hay cambios para evitar parpadeos
+        setCommentsList(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                return data;
+            }
+            return prev;
+        });
+    }
+  };
+
   useEffect(() => {
     if (pageId) {
+        // 1. Carga inicial
         fetchComments();
+        
+        // 2. Resetear vista
         setTransform({ scale: 1, x: 0, y: 0 });
         setIsPinMode(false);
         setTempPin(null);
 
-        // --- CANAL ÚNICO POR PÁGINA ---
-        const channelName = `room-${pageId}`; 
+        // 3. PLAN B: Auto-actualización cada 3 segundos (Polling)
+        // Esto garantiza que funcione aunque falle el Realtime
+        const intervalId = setInterval(() => {
+            fetchComments();
+        }, 3000);
+
+        // 4. PLAN A: Intentar Realtime (por si acaso funciona)
         const channel = supabase
-          .channel(channelName)
-          .on('postgres_changes', 
-            { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
-            (payload) => {
-             // Procesar cambios que vienen del servidor (otra persona)
-             if (payload.eventType === 'INSERT') {
-                setCommentsList((prev) => {
-                    // Evitar duplicados si ya lo añadimos nosotros localmente
-                    if (prev.find(c => c.id === payload.new.id)) return prev;
-                    if (addNotification) addNotification({ type: 'system', title: 'Nueva corrección', message: 'Se ha añadido una nota.' });
-                    return [payload.new as Comment, ...prev];
-                });
-             } else if (payload.eventType === 'DELETE') {
-                setCommentsList((prev) => prev.filter(c => c.id !== payload.old.id));
-             } else if (payload.eventType === 'UPDATE') {
-                setCommentsList((prev) => prev.map(c => c.id === payload.new.id ? (payload.new as Comment) : c));
-             }
+          .channel('any')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+             fetchComments(); // Si llega un evento, recargamos inmediatamente
           })
-          .subscribe((status) => {
-              if (status === 'SUBSCRIBED') console.log("🟢 Conectado a tiempo real en " + channelName);
-          });
+          .subscribe();
 
         return () => {
+            clearInterval(intervalId); // Limpiar intervalo al salir
             supabase.removeChannel(channel);
         };
     } 
     if (page) fetchPreviousVersion();
   }, [pageId, page]);
-
-  const fetchComments = async () => {
-    const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
-    if (data) setCommentsList(data);
-  };
 
   const fetchPreviousVersion = async () => {
     if (!page || !page.version || page.version <= 1) return;
@@ -168,7 +171,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         const { error: uploadError } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
         if (uploadError) {
             console.error(uploadError);
-            alert("Error al subir imagen (revisa permisos en Supabase).");
+            alert("Error al subir imagen.");
             setIsUploadingAttachment(false);
             return;
         }
@@ -185,15 +188,13 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         attachment_url: uploadedUrl 
     };
 
-    // 1. Guardar en Base de Datos
     const { data, error } = await supabase.from('comments').insert([newComment]).select();
     setIsUploadingAttachment(false);
 
     if (error) {
       alert('Error: ' + error.message);
     } else if (data) {
-      // 2. Actualizar LOCALMENTE inmediatamente (para que tú lo veas rápido)
-      setCommentsList(prev => [data[0], ...prev]);
+      setCommentsList(prev => [data[0], ...prev]); // Actualización optimista inmediata
       setComment("");
       setAttachment(null);
       setTempPin(null);
@@ -205,8 +206,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
     
-    // Optimistic Update
-    setCommentsList(prev => prev.filter(c => c.id !== id));
+    setCommentsList(prev => prev.filter(c => c.id !== id)); // Optimista
     if (activePinId === id) setActivePinId(null);
 
     await supabase.from('comments').delete().eq('id', id);
@@ -216,8 +216,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (isReviewLocked) return;
     const newStatus = !currentStatus;
     
-    // Optimistic Update
-    setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
+    setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c)); // Optimista
     
     await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
   };
