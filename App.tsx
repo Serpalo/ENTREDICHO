@@ -13,51 +13,72 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [toasts, setToasts] = useState<AppNotification[]>([]);
 
-  // CARGAR DATOS DE SUPABASE (PROYECTOS Y CARPETAS)
+  // CARGAR DATOS DE SUPABASE (PROYECTOS, CARPETAS Y PÁGINAS)
   useEffect(() => {
     const fetchData = async () => {
       // 1. Cargar Proyectos
-      const { data: projectsData, error: projectsError } = await supabase
+      const { data: projectsData } = await supabase
         .from('projects')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (projectsError) console.error('Error cargando proyectos:', projectsError);
-      
-      if (projectsData) {
-        const loadedProjects: Project[] = projectsData.map((item: any) => ({
-          id: item.id.toString(),
-          name: item.title,
-          parentId: item.parent_id || null, // Importante: ahora leemos dónde están guardados
-          type: 'project',
-          image_url: item.image_url,
-          versions: [
-             {
-               id: `v1-${item.id}`,
-               versionNumber: 1,
-               createdAt: new Date(item.created_at),
-               isActive: true,
-               pages: item.image_url ? [{
-                 id: `pg1-${item.id}`,
-                 pageNumber: 1,
-                 imageUrl: item.image_url,
-                 status: 'first_version',
-                 approvals: {},
-                 comments: []
-               }] : []
-             }
-          ]
-        }));
-        setProjects(loadedProjects);
-      }
+      // 2. Cargar Páginas
+      const { data: pagesData } = await supabase
+        .from('pages')
+        .select('*')
+        .order('page_number', { ascending: true });
 
-      // 2. Cargar Carpetas
-      const { data: foldersData, error: foldersError } = await supabase
+      // 3. Cargar Carpetas
+      const { data: foldersData } = await supabase
         .from('folders')
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (foldersError) console.error('Error cargando carpetas:', foldersError);
+      // 4. Montar el puzzle
+      if (projectsData) {
+        const loadedProjects: Project[] = projectsData.map((item: any) => {
+          // Buscamos las páginas de este proyecto
+          const projectPages = pagesData?.filter((p: any) => p.project_id === item.id.toString()) || [];
+          
+          // Si no hay páginas en la tabla nueva, miramos si tenía una antigua en 'image_url' (retrocompatibilidad)
+          const finalPages = projectPages.length > 0 
+            ? projectPages.map((p: any) => ({
+                id: p.id.toString(),
+                pageNumber: p.page_number,
+                imageUrl: p.image_url,
+                status: 'first_version',
+                approvals: {},
+                comments: []
+              }))
+            : (item.image_url ? [{
+                id: `legacy-${item.id}`,
+                pageNumber: 1,
+                imageUrl: item.image_url,
+                status: 'first_version',
+                approvals: {},
+                comments: []
+              }] : []);
+
+          return {
+            id: item.id.toString(),
+            name: item.title,
+            parentId: item.parent_id || null,
+            type: 'project',
+            advertisingEmails: [], // Podrías guardarlos en DB si quisieras
+            productDirectionEmails: [],
+            versions: [
+               {
+                 id: `v1-${item.id}`,
+                 versionNumber: 1,
+                 createdAt: new Date(item.created_at),
+                 isActive: true,
+                 pages: finalPages
+               }
+            ]
+          };
+        });
+        setProjects(loadedProjects);
+      }
 
       if (foldersData) {
         const loadedFolders: Folder[] = foldersData.map((item: any) => ({
@@ -82,10 +103,7 @@ const App: React.FC = () => {
     };
     setNotifications(prev => [newNotif, ...prev]);
     setToasts(prev => [...prev, newNotif]);
-    
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== newNotif.id));
-    }, 5000);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== newNotif.id)), 5000);
   };
 
   const markAllAsRead = () => {
@@ -96,8 +114,6 @@ const App: React.FC = () => {
     <HashRouter>
       <div className="min-h-screen flex flex-col bg-slate-50 relative overflow-hidden">
         <Navbar notifications={notifications} markAllAsRead={markAllAsRead} />
-        
-        {/* Toast Container */}
         <div className="fixed top-20 right-6 z-[200] flex flex-col gap-3 pointer-events-none w-full max-w-sm">
           {toasts.map(toast => (
             <div key={toast.id} className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-4 pointer-events-auto animate-in slide-in-from-right fade-in duration-300">
@@ -113,7 +129,6 @@ const App: React.FC = () => {
             </div>
           ))}
         </div>
-
         <main className="flex-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
