@@ -40,7 +40,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
   const project = projects.find(p => p.id === projectId);
-  // Type assertion para evitar errores si types.ts no está al día
   let version: any = null;
   let page: any = null;
   if (project) {
@@ -58,25 +57,19 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (data) setCommentsList(data);
   };
 
-  // --- COMPARADOR INTELIGENTE ---
   const fetchPreviousVersion = async () => {
     if (!page || !page.version || page.version <= 1) return;
-    
-    // Buscamos cualquier versión ANTERIOR (menor que la actual)
-    // Ordenamos descendente para coger la más alta posible (ej: si estamos en V4 y falta V3, cogerá V2)
     const { data } = await supabase
       .from('pages')
       .select('image_url')
       .eq('project_id', projectId)
       .eq('page_number', page.pageNumber)
-      .lt('version', page.version) // Menor que la actual
-      .order('version', { ascending: false }) // La más alta de las anteriores
+      .lt('version', page.version) 
+      .order('version', { ascending: false }) 
       .limit(1)
       .single();
 
-    if (data) {
-      setPreviousPageUrl(data.image_url);
-    }
+    if (data) setPreviousPageUrl(data.image_url);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -140,7 +133,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   if (!project || !version || !page) return <div className="p-10 text-center">Cargando...</div>;
-  const isPdf = page.imageUrl.toLowerCase().includes('.pdf');
 
   return (
     <div className="min-h-screen bg-slate-800 flex flex-col h-screen overflow-hidden">
@@ -162,10 +154,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 <button onClick={() => setTransform(t => ({...t, scale: t.scale - 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg></button>
                 <span className="px-2 flex items-center text-xs font-bold text-slate-500 w-12 justify-center">{Math.round(transform.scale * 100)}%</span>
                 <button onClick={() => setTransform(t => ({...t, scale: t.scale + 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button>
-                <button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-indigo-500 font-bold text-xs">1:1</button>
+                <button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-rose-500 font-bold text-xs">1:1</button>
             </div>
 
-            {/* BOTÓN COMPARAR: SOLO SALE SI HAY VERSIÓN PREVIA ENCONTRADA */}
             {previousPageUrl && (
                 <button onClick={() => setIsCompareMode(!isCompareMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all ${isCompareMode ? 'bg-amber-500 text-white shadow-lg ring-4 ring-amber-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
@@ -173,7 +164,8 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 </button>
             )}
 
-           <button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-500 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-500'}`}>
+           {/* CAMBIO: bg-rose-600 y textos hover rojo */}
+           <button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-600'}`}>
              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
              {isPinMode ? 'Cancelar' : 'Poner Nota'}
            </button>
@@ -195,19 +187,20 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                         <div className="w-0.5 h-full bg-amber-400 shadow-[0_0_10px_rgba(0,0,0,0.5)]"></div>
                         <div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute"><svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" transform="rotate(90 12 12)" /></svg></div>
                     </div>
-                    <div className="absolute top-4 right-4 bg-indigo-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl z-10">VERSIÓN ACTUAL</div>
+                    <div className="absolute top-4 right-4 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl z-10">VERSIÓN ACTUAL</div>
                 </>
             )}
 
             {!isCompareMode && (
                 <>
-                    {isPinMode && <div className="absolute inset-0 bg-indigo-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
+                    {/* CAMBIO: bg-rose-500/10 y bordes rojos */}
+                    {isPinMode && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
                     {commentsList.map((c) => (
                         <div key={c.id} onClick={(e) => { e.stopPropagation(); setActivePinId(activePinId === c.id ? null : c.id); }} className="absolute w-8 h-8 -ml-4 -mt-8 z-20 cursor-pointer group hover:z-30" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
                             <svg className={`w-full h-full drop-shadow-md transition-colors ${c.resolved ? 'text-emerald-500' : 'text-rose-500'}`} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
                         </div>
                     ))}
-                    {tempPin && <div className="absolute w-8 h-8 -ml-4 -mt-8 z-30" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}><svg className="w-full h-full text-indigo-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>}
+                    {tempPin && <div className="absolute w-8 h-8 -ml-4 -mt-8 z-30" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}><svg className="w-full h-full text-rose-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>}
                 </>
             )}
           </div>
@@ -215,12 +208,15 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
         <aside className="w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-2xl z-40">
           {tempPin ? (
-            <div className="p-6 bg-indigo-50 border-b border-indigo-100 h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-4 text-indigo-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div>
-              <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-indigo-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-indigo-200 outline-none transition-all shadow-inner mb-4" />
+            // CAMBIO: bg-rose-50 y bordes rojos
+            <div className="p-6 bg-rose-50 border-b border-rose-100 h-full flex flex-col">
+              <div className="flex items-center gap-2 mb-4 text-rose-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div>
+              {/* CAMBIO: focus:ring-rose-200 */}
+              <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-rose-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-rose-200 outline-none transition-all shadow-inner mb-4" />
               <div className="flex gap-2">
                 <button onClick={() => setTempPin(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                <button onClick={handleSavePin} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all">Guardar</button>
+                {/* CAMBIO: bg-rose-600 y shadow-rose-200 */}
+                <button onClick={handleSavePin} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all">Guardar</button>
               </div>
             </div>
           ) : (
