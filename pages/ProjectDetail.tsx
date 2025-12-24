@@ -80,39 +80,48 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   const handleNewVersionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !project) return;
     setIsUploadingVersion(true);
-    setShowUploadModal(false);
-
-    if (deadline) {
-        await supabase.from('projects').update({ review_deadline: deadline }).eq('id', project.id);
-    }
-
-    // CALCULAR EL ESTADO AUTOMÁTICO
-    const maxV = Math.max(...project.versions.map(v => v.versionNumber), 0);
-    const nextVersionNum = maxV + 1;
-    // Genera: "2ª corrección", "3ª corrección", etc. automáticamente
-    const automaticStatus = `${nextVersionNum}ª corrección`;
-
-    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    // No cerramos el modal inmediatamente para mostrar estado de carga si fuera necesario
+    // setShowUploadModal(false); 
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        await supabase.storage.from('brochures').upload(fileName, file);
-        const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
+        if (deadline) {
+            const { error: deadlineError } = await supabase.from('projects').update({ review_deadline: deadline }).eq('id', project.id);
+            if (deadlineError) throw new Error("Error actualizando fecha: " + deadlineError.message);
+        }
+
+        const maxV = Math.max(...project.versions.map(v => v.versionNumber), 0);
+        const nextVersionNum = maxV + 1;
+        // Generamos el string de estado automáticamente
+        const automaticStatus = `${nextVersionNum}ª corrección`;
+
+        const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            
+            const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
+            if (uploadError) throw new Error("Error subiendo imagen: " + uploadError.message);
+            
+            const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
+            
+            const { error: dbError } = await supabase.from('pages').insert([{ 
+                project_id: project.id, 
+                image_url: publicUrl, 
+                page_number: i + 1, 
+                version: nextVersionNum, 
+                status: automaticStatus 
+            }]);
+
+            if (dbError) throw new Error("Error guardando página en BD: " + dbError.message);
+        }
         
-        // AQUÍ SE USA EL ESTADO AUTOMÁTICO
-        await supabase.from('pages').insert([{ 
-            project_id: project.id, 
-            image_url: publicUrl, 
-            page_number: i + 1, 
-            version: nextVersionNum, 
-            status: automaticStatus 
-        }]);
-      }
-      window.location.reload();
-    } catch (err) {
+        // Todo salió bien
+        window.location.reload();
+
+    } catch (err: any) {
       console.error(err);
+      alert("⚠️ Error al subir la nueva versión:\n" + (err.message || err));
       setIsUploadingVersion(false);
     }
   };
@@ -128,9 +137,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
     if (!error) setProjects(prev => prev.map(p => { if (p.id !== projectId) return p; return { ...p, versions: p.versions.map(v => ({ ...v, pages: v.pages.filter(pg => pg.id !== pageId) })) }; }));
   };
 
-  // Función auxiliar para obtener el color del estado
   const getStatusColor = (status: string) => {
       return STATUS_OPTIONS[status] || 'bg-slate-100 text-slate-600 border-slate-200';
+  };
+
+  // Función para abrir el selector de archivos asegurando que está limpio
+  const triggerFileInput = () => {
+      if (fileInputRef.current) {
+          fileInputRef.current.value = ''; // Resetear valor para permitir seleccionar el mismo archivo
+          fileInputRef.current.click();
+      }
   };
 
   if (!project) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-400">Cargando...</div>;
@@ -148,7 +164,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                 <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500 mb-6" />
                 <div className="flex gap-3">
                     <button onClick={() => setShowUploadModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200">Cancelar</button>
-                    <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700">Seleccionar Archivos</button>
+                    <button 
+                        onClick={triggerFileInput} 
+                        disabled={isUploadingVersion}
+                        className={`flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all ${isUploadingVersion ? 'opacity-50 cursor-wait' : ''}`}
+                    >
+                        {isUploadingVersion ? 'Subiendo...' : 'Seleccionar Archivos'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -180,7 +202,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                 ))}
             </div>
             <div className="flex bg-slate-100 border border-slate-200 rounded-lg p-1">
-                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded transition-all ${viewMode === 'grid' ? 'bg-white text-rose-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg></button>
+                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded transition-all ${viewMode === 'grid' ? 'bg-white text-rose-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg></button>
                 <button onClick={() => setViewMode('list')} className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-white text-rose-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
             </div>
         </div>
@@ -204,13 +226,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                               <td className="px-8 py-6 text-center">{count > 0 ? <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm shadow-rose-50"><span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>{count} PENDIENTES</div> : <span className="text-slate-200 text-[10px] font-black uppercase tracking-widest">Limpia</span>}</td>
                               <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}>
                                 <select value={page.status || '1ª corrección'} onChange={(e) => handleStatusChange(page.id, e.target.value)} className={`text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest border-2 cursor-pointer outline-none transition-all appearance-none shadow-sm ${getStatusColor(page.status || '')}`}>
-                                    {/* Muestra las opciones predefinidas */}
                                     {Object.keys(STATUS_OPTIONS).map(status => <option key={status} value={status}>{status}</option>)}
-                                    
-                                    {/* Si el estado actual NO está en las opciones (ej: "7ª corrección"), añádelo para que se vea bien */}
-                                    {!STATUS_OPTIONS[page.status || ''] && page.status && (
-                                        <option value={page.status}>{page.status}</option>
-                                    )}
+                                    {!STATUS_OPTIONS[page.status || ''] && page.status && <option value={page.status}>{page.status}</option>}
                                 </select>
                               </td>
                               <td className="px-8 py-6 text-right"><button className="bg-rose-50 text-rose-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">Revisar</button><button onClick={(e) => {e.stopPropagation(); handleDeletePage(page.id)}} className="ml-2 bg-slate-50 text-slate-400 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">X</button></td>
