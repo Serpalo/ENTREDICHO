@@ -9,7 +9,6 @@ interface PageReviewProps {
   addNotification?: (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
 }
 
-// Tipo simple para los comentarios
 interface Comment {
   id: string;
   content: string;
@@ -25,12 +24,10 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   
-  // 1. Encontrar los datos del proyecto localmente
   const project = projects.find(p => p.id === projectId);
   const version = project?.versions.find(v => v.id === versionId);
   const page = version?.pages.find(p => p.id === pageId);
 
-  // 2. Cargar comentarios de Supabase al entrar
   useEffect(() => {
     if (pageId) {
       fetchComments();
@@ -43,7 +40,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
       .from('comments')
       .select('*')
       .eq('page_id', pageId)
-      .order('created_at', { ascending: false }); // Los más nuevos primero
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error cargando notas:', error);
@@ -53,11 +50,15 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     setIsLoadingComments(false);
   };
 
-  // 3. Función para guardar una nueva nota
   const handleAddComment = async () => {
-    if (!comment.trim() || !pageId) return;
+    // Si está vacío, avisamos y paramos
+    if (!comment.trim()) {
+      alert("Por favor, escribe algo antes de añadir la nota.");
+      return;
+    }
+    
+    if (!pageId) return;
 
-    // Guardar en Supabase
     const { data, error } = await supabase
       .from('comments')
       .insert([
@@ -69,17 +70,13 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
       .select();
 
     if (error) {
-      alert('Error al guardar la nota. Revisa que la tabla "comments" exista y tenga RLS desactivado.');
-      console.error(error);
+      alert('Error al guardar: ' + error.message);
       return;
     }
 
     if (data) {
-      // Añadir a la lista visualmente
       setCommentsList(prev => [data[0], ...prev]);
-      setComment(""); // Limpiar el campo
-      
-      // Notificación opcional (Toast)
+      setComment(""); 
       if (addNotification) {
         addNotification({
           type: 'system',
@@ -91,27 +88,14 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   };
 
-  // --- RENDER ---
-
-  if (!project) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-400 font-bold animate-pulse">Cargando documento...</p>
-        </div>
-      </div>
-    );
-  }
-
+  if (!project) return <div className="p-10 text-center">Cargando...</div>;
   if (!version || !page) return <div className="p-10 text-center">Documento no encontrado</div>;
 
   const isPdf = page.imageUrl.toLowerCase().includes('.pdf');
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col h-screen overflow-hidden">
-      {/* Header */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0 z-20 shadow-sm">
+      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0 z-50 shadow-sm relative">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
@@ -129,14 +113,13 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative z-0">
         {/* Área del Documento */}
-        <div className="flex-1 bg-slate-800 overflow-hidden flex items-center justify-center relative">
+        <div className="flex-1 bg-slate-800 overflow-hidden flex items-center justify-center relative z-0">
           {isPdf ? (
             <iframe 
               src={page.imageUrl} 
-              className="w-full h-full border-none"
+              className="w-full h-full border-none relative z-0"
               title="Visor PDF"
             />
           ) : (
@@ -146,26 +129,25 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           )}
         </div>
 
-        {/* Sidebar Comentarios (Derecha) */}
-        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-xl z-10">
+        {/* Sidebar Comentarios - Z-INDEX ALTO para estar encima del PDF */}
+        <aside className="w-80 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-2xl z-50 relative">
           <div className="p-5 border-b border-slate-100 bg-white">
             <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide mb-1">Notas</h3>
             <p className="text-xs text-slate-400 font-medium">Correcciones sobre este archivo</p>
           </div>
           
-          {/* Lista de Comentarios */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
              {isLoadingComments && <div className="text-center py-4 text-xs text-slate-400">Cargando...</div>}
              
              {!isLoadingComments && commentsList.length === 0 && (
                <div className="text-center py-8 text-slate-400 text-xs italic">
-                 No hay comentarios aún. Sé el primero.
+                 No hay comentarios aún.
                </div>
              )}
 
              {commentsList.map((nota) => (
                <div key={nota.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-in slide-in-from-right duration-300">
-                 <p className="text-sm text-slate-700 font-medium leading-relaxed">{nota.content}</p>
+                 <p className="text-sm text-slate-700 font-medium leading-relaxed break-words">{nota.content}</p>
                  <p className="text-[10px] text-slate-300 font-bold mt-2 uppercase tracking-wider text-right">
                    {new Date(nota.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                  </p>
@@ -173,24 +155,17 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
              ))}
           </div>
 
-          {/* Caja para escribir */}
           <div className="p-4 border-t border-slate-200 bg-white">
             <textarea 
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Escribe una corrección..." 
               className="w-full h-24 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm resize-none focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleAddComment();
-                }
-              }}
             />
+            {/* BOTÓN SIEMPRE ACTIVO AHORA */}
             <button 
               onClick={handleAddComment}
-              disabled={!comment.trim()}
-              className={`w-full mt-3 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg transition-all ${!comment.trim() ? 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 hover:-translate-y-0.5'}`}
+              className="w-full mt-3 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 hover:-translate-y-0.5 transition-all cursor-pointer"
             >
               Añadir Comentario
             </button>
