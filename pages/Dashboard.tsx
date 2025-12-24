@@ -29,7 +29,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [itemToDelete, setItemToDelete] = useState<FileSystemItem | null>(null);
 
-  // Modals for Notifications and Deadlines
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -40,7 +39,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const currentFolders = folders.filter(f => f.parentId === currentFolderId);
   const currentProjects = projects.filter(p => p.parentId === currentFolderId);
 
-  // If no active project is set but we open a modal, default to the first project in view
   useEffect(() => {
     if ((showEmailModal || showCalendarModal) && !activeProjectId && currentProjects.length > 0) {
       setActiveProjectId(currentProjects[0].id);
@@ -49,12 +47,11 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
-  // Helper to split ISO to date and time
   const splitISO = (iso: string | undefined) => {
     if (!iso) return { date: '', time: '' };
     const dt = new Date(iso);
     const date = dt.toISOString().split('T')[0];
-    const time = dt.toTimeString().split(' ')[0].substring(0, 5); // HH:MM
+    const time = dt.toTimeString().split(' ')[0].substring(0, 5); 
     return { date, time };
   };
 
@@ -65,7 +62,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     endTime: "18:00"
   });
 
-  // Sync temp dates when active project changes
   useEffect(() => {
     if (activeProject) {
       const si = splitISO(activeProject.correctionPeriod?.startDateTime);
@@ -79,7 +75,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     }
   }, [activeProjectId, activeProject?.correctionPeriod]);
 
-  // Auto-expand current path in tree
   useEffect(() => {
     if (currentFolderId) {
       const newExpanded = new Set(expandedFolders);
@@ -116,18 +111,34 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
   const breadcrumbs = getBreadcrumbs();
 
-  const handleCreateFolder = () => {
+  // --- 1. FUNCIÓN CREAR CARPETA (CONECTADA A SUPABASE) ---
+  const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
       setIsCreatingFolder(false);
       return;
     }
-    const newFolder: Folder = {
-      id: `f-${Date.now()}`,
-      name: newFolderName,
-      parentId: currentFolderId,
-      type: 'folder'
-    };
-    setFolders(prev => [...prev, newFolder]);
+    
+    // Guardar en Supabase
+    const { data, error } = await supabase
+      .from('folders')
+      .insert([{ name: newFolderName, parent_id: currentFolderId }])
+      .select();
+
+    if (error) {
+      console.error('Error creando carpeta:', error);
+      alert('No se pudo crear la carpeta.');
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const newFolder: Folder = {
+        id: data[0].id.toString(),
+        name: data[0].name,
+        parentId: data[0].parent_id,
+        type: 'folder'
+      };
+      setFolders(prev => [...prev, newFolder]);
+    }
     setNewFolderName("");
     setIsCreatingFolder(false);
   };
@@ -175,34 +186,30 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     setItemToDelete(item);
   };
 
-  // --- FUNCIÓN ACTUALIZADA PARA SUBIR IMÁGENES A SUPABASE STORAGE ---
+  // --- 2. FUNCIÓN SUBIR ARCHIVO (CON LA CARPETA CORRECTA) ---
   const handleFilesUpload = async (files: FileList | File[], targetFolderId: string | null = currentFolderId) => {
     const file = files[0];
     if (!file) return;
 
-    // 1. Preparamos nombres
     const projectName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
-    // Nombre único para el archivo (timestamp + nombre limpio)
     const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
 
     try {
-      // 2. SUBIR AL STORAGE (BUCKET 'brochures')
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('brochures')
         .upload(fileName, file);
 
       if (uploadError) {
-        console.error('Error subiendo archivo:', uploadError);
-        alert('Error al subir la imagen. Asegúrate de haber creado el bucket "brochures" y hacerlo público.');
+        console.error('Error storage:', uploadError);
+        alert('Error al subir imagen.');
         return;
       }
 
-      // 3. OBTENER URL PÚBLICA
       const { data: { publicUrl } } = supabase.storage
         .from('brochures')
         .getPublicUrl(fileName);
 
-      // 4. GUARDAR EN BASE DE DATOS (CON LA FOTO)
+      // AÑADIMOS 'parent_id' AQUÍ PARA QUE SE GUARDE DENTRO DE LA CARPETA
       const { data, error } = await supabase
         .from('projects')
         .insert([
@@ -210,14 +217,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
             title: projectName, 
             status: 'active', 
             description: 'Subido desde Dashboard',
-            image_url: publicUrl // <--- Aquí guardamos el enlace
+            image_url: publicUrl,
+            parent_id: targetFolderId // <--- ESTO ES LA CLAVE
           }
         ])
         .select();
 
       if (error) {
         console.error('Error DB:', error);
-        alert('Error al guardar en la base de datos.');
         return;
       }
 
@@ -225,7 +232,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         const savedProject = data[0];
         const realId = savedProject.id.toString();
 
-        // 5. ACTUALIZAR ESTADO LOCAL VISUAL
         const newProject: Project = {
           id: realId,
           name: projectName,
@@ -241,7 +247,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                  {
                    id: `pg1-${realId}`,
                    pageNumber: 1,
-                   imageUrl: publicUrl, // <--- Usamos la URL real
+                   imageUrl: publicUrl,
                    status: 'first_version' as any,
                    approvals: {},
                    comments: []
@@ -258,7 +264,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
       }
 
     } catch (err) {
-      console.error('Error inesperado:', err);
+      console.error('Error:', err);
     }
   };
 
@@ -344,7 +350,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
     setIsSending(true);
 
-    // Simulate sending time
     setTimeout(() => {
       addNotification({
         type: 'system',
@@ -406,7 +411,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         </div>
       )}
 
-      {/* Email Modal with Project Selector and SEND button */}
+      {/* Email Modal */}
       {showEmailModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex justify-end">
           <div className="w-full max-w-md bg-white h-full shadow-2xl p-8 flex flex-col animate-in slide-in-from-right">
@@ -418,7 +423,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
               <button onClick={() => setShowEmailModal(false)} className="p-2 hover:bg-slate-100 rounded-lg"><svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
 
-            {/* Project Selector inside Modal */}
             <div className="mb-6">
               <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Seleccionar Folleto</label>
               <select 
@@ -483,7 +487,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         </div>
       )}
 
-      {/* Calendar Modal with Project Selector */}
+      {/* Calendar Modal */}
       {showCalendarModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
            <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -497,7 +501,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                 </button>
               </div>
 
-              {/* Project Selector inside Modal */}
               <div className="mb-8">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Proyecto a configurar</label>
                 <select 
