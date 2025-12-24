@@ -181,4 +181,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                           return (
                             <tr key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="group hover:bg-slate-50/50 cursor-pointer transition-colors">
                               <td className="px-8 py-6 text-center font-black text-slate-300">#{index + 1}</td>
-                              <td className="px-8 py-6"><div className="flex items-center
+                              <td className="px-8 py-6"><div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm"><img src={page.imageUrl} className="w-full h-full object-cover" /></div><span className="text-sm font-black text-slate-700">Página {page.pageNumber}</span></div></td>
+                              <td className="px-8 py-6 text-center">{count > 0 ? <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm shadow-rose-50"><span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>{count} PENDIENTES</div> : <span className="text-slate-200 text-[10px] font-black uppercase tracking-widest">Limpia</span>}</td>
+                              <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}><select value={page.status || '1ª corrección'} onChange={(e) => handleStatusChange(page.id, e.target.value)} className={`text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest border-2 cursor-pointer outline-none transition-all appearance-none shadow-sm ${STATUS_OPTIONS[page.status as keyof typeof STATUS_OPTIONS] || 'bg-slate-100'}`}>{Object.keys(STATUS_OPTIONS).map(status => <option key={status} value={status}>{status}</option>)}</select></td>
+                              <td className="px-8 py-6 text-right"><button className="bg-rose-50 text-rose-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">Revisar</button><button onClick={(e) => {e.stopPropagation(); handleDeletePage(page.id)}} className="ml-2 bg-slate-50 text-slate-400 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">X</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                 </table>
+             ) : (
+                 <div className="p-8 grid grid-cols-4 gap-6">
+                    {activeVersion.pages.map((page, index) => {
+                        const count = commentsCount[page.id] || 0;
+                        return (
+                            <div key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="bg-white border border-slate-200 rounded-2xl p-4 cursor-pointer hover:shadow-lg transition-all relative group">
+                                {count > 0 && <div className="absolute top-2 right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-lg z-10">{count}</div>}
+                                <img src={page.imageUrl} className="w-full aspect-[3/4] object-contain bg-slate-50 rounded-xl mb-3" />
+                                <div className="flex justify-between items-center"><span className="font-bold text-sm">Página {page.pageNumber}</span><span className={`text-[9px] font-bold px-2 py-1 rounded uppercase ${STATUS_OPTIONS[page.status as keyof typeof STATUS_OPTIONS]}`}>{page.status}</span></div>
+                            </div>
+                        )
+                    })}
+                 </div>
+             )}
+          </div>
+        ) : (
+          <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-white"><p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay páginas en esta versión</p></div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default ProjectDetail;
