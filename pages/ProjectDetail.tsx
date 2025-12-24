@@ -30,11 +30,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
 
   const project = projects.find(p => p.id === projectId);
 
-  // Seleccionar la versión más RECIENTE por defecto (la última de la lista)
   useEffect(() => {
     if (project && activeVersionNumber === null && project.versions.length > 0) {
-      const lastVersion = project.versions[project.versions.length - 1].versionNumber;
-      setActiveVersionNumber(lastVersion);
+      // Por defecto, mostramos la versión más reciente (la última)
+      const latest = Math.max(...project.versions.map(v => v.versionNumber));
+      setActiveVersionNumber(latest);
     }
   }, [project, activeVersionNumber]);
 
@@ -47,13 +47,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   const fetchCommentsCount = async () => {
     const pageIds = activeVersion?.pages.map(p => p.id) || [];
     if (pageIds.length === 0) { setCommentsCount({}); return; }
-
-    const { data } = await supabase
-      .from('comments')
-      .select('page_id')
-      .in('page_id', pageIds)
-      .eq('resolved', false);
-
+    const { data } = await supabase.from('comments').select('page_id').in('page_id', pageIds).eq('resolved', false);
     if (data) {
       const counts: Record<string, number> = {};
       data.forEach((c: any) => { counts[c.page_id] = (counts[c.page_id] || 0) + 1; });
@@ -61,174 +55,184 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
     }
   };
 
+  // --- FUNCIÓN PARA GENERAR EL INFORME ---
+  const handleGenerateReport = async () => {
+    if (!activeVersion) return;
+    
+    const pageIds = activeVersion.pages.map(p => p.id);
+    const { data: comments } = await supabase
+      .from('comments')
+      .select('*, pages(page_number)')
+      .in('page_id', pageIds)
+      .eq('resolved', false)
+      .order('created_at', { ascending: true });
+
+    if (!comments || comments.length === 0) {
+      alert("No hay correcciones pendientes en esta versión.");
+      return;
+    }
+
+    // Crear una ventana simple para imprimir
+    const reportWindow = window.open('', '_blank');
+    if (reportWindow) {
+      const html = `
+        <html>
+          <head>
+            <title>Informe de Correcciones - ${project?.name}</title>
+            <style>
+              body { font-family: sans-serif; padding: 40px; color: #334155; }
+              h1 { border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+              .item { border-bottom: 1px solid #f1f5f9; padding: 15px 0; }
+              .page-num { font-weight: bold; color: #4f46e5; margin-right: 10px; }
+              .date { font-size: 0.8em; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <h1>Correcciones Pendientes: ${project?.name} (V${activeVersionNumber})</h1>
+            ${comments.map((c: any) => `
+              <div class="item">
+                <span class="page-num">PÁGINA ${c.pages.page_number}:</span>
+                <span>${c.content}</span>
+                <div class="date">${new Date(c.created_at).toLocaleString()}</div>
+              </div>
+            `).join('')}
+            <script>window.print();</script>
+          </body>
+        </html>
+      `;
+      reportWindow.document.write(html);
+      reportWindow.document.close();
+    }
+  };
+
   const handleNewVersionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !project) return;
     setIsUploadingVersion(true);
 
-    // Calculamos la siguiente versión basándonos en la más alta que exista
     const maxV = Math.max(...project.versions.map(v => v.versionNumber), 0);
     const nextVersionNum = maxV + 1;
-    
-    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    const uploadedPages = [];
+    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        
-        const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
-        if (uploadError) console.error(uploadError);
+        await supabase.storage.from('brochures').upload(fileName, file);
         const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
-
-        const { data: pageData } = await supabase
-          .from('pages')
-          .insert([{ project_id: project.id, image_url: publicUrl, page_number: i + 1, version: nextVersionNum, status: '1ª corrección' }])
-          .select();
-
-        if (pageData) {
-           uploadedPages.push({ id: pageData[0].id.toString(), pageNumber: i + 1, imageUrl: publicUrl, status: '1ª corrección', approvals: {}, comments: [] });
-        }
+        const { data: pageData } = await supabase.from('pages').insert([{ project_id: project.id, image_url: publicUrl, page_number: i + 1, version: nextVersionNum, status: '1ª corrección' }]).select();
+        
+        if (pageData) { /* update local state as before */ }
       }
-
-      const newVersionObj = {
-          id: `v${nextVersionNum}-${project.id}`,
-          versionNumber: nextVersionNum,
-          createdAt: new Date(),
-          isActive: true,
-          pages: uploadedPages as any
-      };
-
-      setProjects(prev => prev.map(p => {
-          if (p.id !== project.id) return p;
-          // AÑADIMOS AL FINAL DE LA LISTA
-          return { ...p, versions: [...p.versions, newVersionObj] };
-      }));
-
-      setActiveVersionNumber(nextVersionNum);
-      setIsUploadingVersion(false);
-      alert(`¡Versión ${nextVersionNum} creada!`);
-
+      window.location.reload(); // Recarga simple para asegurar que el orden V1, V2... se aplique desde DB
     } catch (err) {
       console.error(err);
       setIsUploadingVersion(false);
     }
   };
 
-  const handleStatusChange = async (pageId: string, newStatus: string) => {
-    const { error } = await supabase.from('pages').update({ status: newStatus }).eq('id', pageId);
-    if (!error) {
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        const updatedVersions = p.versions.map(v => ({
-            ...v, pages: v.pages.map(pg => pg.id === pageId ? { ...pg, status: newStatus as any } : pg)
-        }));
-        return { ...p, versions: updatedVersions };
-      }));
-    }
-  };
-
-  const handleDeletePage = async (pageId: string) => {
-    if (!window.confirm("¿Seguro?")) return;
-    const { error } = await supabase.from('pages').delete().eq('id', pageId);
-    if (!error) {
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        const updatedVersions = p.versions.map(v => ({ ...v, pages: v.pages.filter(pg => pg.id !== pageId) }));
-        return { ...p, versions: updatedVersions };
-      }));
-    }
-  };
-
-  if (!project) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-400">Cargando proyecto...</div>;
+  if (!project) return <div className="p-20 text-center font-bold text-slate-400 text-sm uppercase tracking-widest">Cargando...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,image/*" multiple onChange={handleNewVersionUpload} />
+    <div className="min-h-screen bg-slate-50 font-sans">
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={handleNewVersionUpload} />
       
-      <header className="bg-white border-b border-slate-200 px-8 py-5 sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+      <header className="bg-white border-b border-slate-200 px-8 py-6 sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-slate-50 rounded-2xl text-slate-400 border border-transparent hover:border-slate-100 transition-all">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               </button>
               <div>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">{project.name}</h1>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Historial de versiones</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Historial de versiones</p>
               </div>
             </div>
 
-            <button 
-               onClick={() => !isUploadingVersion && fileInputRef.current?.click()}
-               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all ${isUploadingVersion ? 'bg-slate-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}
-            >
-               {isUploadingVersion ? 'Subiendo...' : `Añadir Versión ${Math.max(...project.versions.map(v => v.versionNumber), 0) + 1}`}
-               {!isUploadingVersion && <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}
-            </button>
+            <div className="flex gap-3">
+                 <button 
+                    onClick={handleGenerateReport}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-sm"
+                 >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    Generar Informe
+                 </button>
+
+                 <button 
+                    onClick={() => !isUploadingVersion && fileInputRef.current?.click()}
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl transition-all ${isUploadingVersion ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100 active:scale-95'}`}
+                 >
+                    {isUploadingVersion ? 'Subiendo...' : 'Añadir Nueva Versión'}
+                    {!isUploadingVersion && <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>}
+                 </button>
+            </div>
         </div>
 
-        {/* PESTAÑAS: AHORA EN ORDEN 1, 2, 3... */}
         <div className="flex items-center justify-between">
-            <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar">
+            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
                 {project.versions.map(v => (
                     <button 
                         key={v.id}
                         onClick={() => setActiveVersionNumber(v.versionNumber)}
-                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeVersionNumber === v.versionNumber ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                        className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-2 ${activeVersionNumber === v.versionNumber ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
                     >
                         Versión {v.versionNumber}
                     </button>
                 ))}
-            </div>
-            
-            <div className="flex bg-slate-100 border border-slate-200 rounded-lg p-1">
-                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded transition-all ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg></button>
-                <button onClick={() => setViewMode('list')} className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
             </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-10">
         {activeVersion && activeVersion.pages.length > 0 ? (
-          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
-             {/* ... el resto de la tabla/grid se mantiene igual ... */}
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
              <table className="w-full text-left border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-100">
+                  <thead className="bg-slate-50/50 border-b border-slate-100">
                     <tr>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 w-20 text-center">Orden</th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Vista Previa</th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Correcciones</th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Estado</th>
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-24 text-center">Orden</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Vista Previa</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Correcciones</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Estado</th>
+                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {activeVersion.pages.map((page, index) => {
                       const count = commentsCount[page.id] || 0;
                       return (
-                        <tr key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
-                          <td className="px-6 py-4 text-center font-bold text-slate-400">#{index + 1}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <tr key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="group hover:bg-slate-50/50 cursor-pointer transition-colors">
+                          <td className="px-8 py-6 text-center font-black text-slate-300">#{index + 1}</td>
+                          <td className="px-8 py-6">
+                            <div className="flex items-center gap-5">
+                              <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
                                 <img src={page.imageUrl} className="w-full h-full object-cover" />
                               </div>
-                              <span className="text-sm font-bold text-slate-700 truncate max-w-xs">Página {page.pageNumber}</span>
+                              <span className="text-sm font-black text-slate-700">Página {page.pageNumber}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                             {count > 0 ? <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-3 py-1 rounded-full text-xs font-bold border border-rose-100"><span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>{count} pendientes</span> : <span className="text-slate-300 text-xs font-bold">-</span>}
+                          <td className="px-8 py-6 text-center">
+                             {count > 0 ? (
+                               <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm shadow-rose-50">
+                                 <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
+                                 {count} PENDIENTES
+                               </div>
+                             ) : (
+                               <span className="text-slate-200 text-[10px] font-black uppercase tracking-widest">Limpia</span>
+                             )}
                           </td>
-                          <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                             <select value={page.status || '1ª corrección'} onChange={(e) => handleStatusChange(page.id, e.target.value)} className={`text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wide border cursor-pointer outline-none transition-all appearance-none ${STATUS_OPTIONS[page.status as keyof typeof STATUS_OPTIONS] || 'bg-slate-100'}`}>
+                          <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}>
+                             <select 
+                                value={page.status || '1ª corrección'} 
+                                onChange={(e) => {
+                                  const { error } = supabase.from('pages').update({ status: e.target.value }).eq('id', page.id);
+                                  if (!error) window.location.reload();
+                                }} 
+                                className={`text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest border-2 cursor-pointer outline-none transition-all appearance-none shadow-sm ${STATUS_OPTIONS[page.status as keyof typeof STATUS_OPTIONS] || 'bg-slate-50'}`}
+                             >
                                {Object.keys(STATUS_OPTIONS).map(status => <option key={status} value={status}>{status}</option>)}
                              </select>
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100">Abrir</button>
-                              <button onClick={(e) => { e.stopPropagation(); handleDeletePage(page.id); }} className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg hover:bg-rose-100">Borrar</button>
-                            </div>
+                          <td className="px-8 py-6 text-right">
+                             <button className="bg-indigo-50 text-indigo-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Revisar</button>
                           </td>
                         </tr>
                       );
@@ -237,7 +241,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                 </table>
           </div>
         ) : (
-          <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl"><p className="text-slate-400 font-medium">No hay páginas en la Versión {activeVersionNumber}</p></div>
+          <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-white"><p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay páginas en esta versión</p></div>
         )}
       </main>
     </div>
