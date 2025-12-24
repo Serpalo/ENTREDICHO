@@ -16,12 +16,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const { folderId } = useParams<{ folderId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // ESTADO NUEVO: Controla si se ve como 'grid' (cuadrícula) o 'list' (lista)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  
+  // ESTADOS PARA EL MODAL DE SUBIDA
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [deadline, setDeadline] = useState("");
 
   const currentFolder = folders.find(f => f.id === folderId);
   const filteredProjects = projects.filter(p => p.parentId === (folderId || null));
@@ -30,12 +32,23 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     setIsUploading(true);
+    setShowUploadModal(false); // Cerramos el modal
 
     const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     const projectName = files[0].name.split('.')[0].replace(/[-_]/g, ' ');
 
     try {
-      const { data: projectData, error: projError } = await supabase.from('projects').insert([{ title: projectName, parent_id: folderId || null, status: 'active' }]).select();
+      // GUARDAMOS LA FECHA LÍMITE (review_deadline)
+      const { data: projectData, error: projError } = await supabase
+        .from('projects')
+        .insert([{ 
+            title: projectName, 
+            parent_id: folderId || null, 
+            status: 'active',
+            review_deadline: deadline || null // <--- AQUÍ SE GUARDA LA FECHA
+        }])
+        .select();
+
       if (projError || !projectData) throw new Error("Error creando proyecto");
       const newProjectId = projectData[0].id;
 
@@ -49,17 +62,15 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         if (pageData) newPages.push({ id: pageData[0].id.toString(), pageNumber: i + 1, imageUrl: publicUrl, status: '1ª corrección', approvals: {}, comments: [] });
       }
 
-      const newProject: Project = {
-        id: newProjectId.toString(), name: projectName, parentId: folderId || null, type: 'project', advertisingEmails: [], productDirectionEmails: [],
-        versions: [{ id: `v1-${newProjectId}`, versionNumber: 1, createdAt: new Date(), isActive: true, pages: newPages as any }]
-      };
-      setProjects(prev => [newProject, ...prev]);
-      if (addNotification) addNotification({ type: 'system', title: 'Proyecto Creado', message: `Se ha subido "${projectName}" correctamente.` });
+      // Necesitamos recargar para traer el campo deadline, o lo simulamos
+      window.location.reload(); 
+
     } catch (error) {
       console.error(error);
       alert("Error al subir.");
     } finally {
       setIsUploading(false);
+      setDeadline("");
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -93,8 +104,36 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   };
 
   return (
-    <div className="flex h-full bg-slate-50">
+    <div className="flex h-full bg-slate-50 relative">
       <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*,.pdf" onChange={handleFileUpload} />
+
+      {/* --- MODAL PARA FECHA LÍMITE --- */}
+      {showUploadModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in duration-200">
+                <h3 className="text-lg font-black text-slate-800 mb-2">Nuevo Proyecto</h3>
+                <p className="text-sm text-slate-500 mb-4">Configura el plazo de revisión antes de subir los archivos.</p>
+                
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha límite para correcciones (Opcional)</label>
+                <input 
+                    type="datetime-local" 
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500 mb-6"
+                />
+
+                <div className="flex gap-3">
+                    <button onClick={() => setShowUploadModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()} 
+                        className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-colors"
+                    >
+                        Seleccionar Archivos
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
         <div className="p-6">
@@ -136,7 +175,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
             </div>
 
             <div className="flex gap-3">
-                {/* --- BOTONES DE VISTA (AHORA FUNCIONAN) --- */}
                 <div className="flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                     <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
@@ -159,14 +197,14 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                     </div>
                 )}
 
-                <button onClick={() => !isUploading && fileInputRef.current?.click()} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm text-white shadow-xl hover:-translate-y-1 transition-all ${isUploading ? 'bg-slate-400 cursor-wait' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
+                {/* BOTÓN ABRE EL MODAL, NO EL INPUT DIRECTAMENTE */}
+                <button onClick={() => !isUploading && setShowUploadModal(true)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm text-white shadow-xl hover:-translate-y-1 transition-all ${isUploading ? 'bg-slate-400 cursor-wait' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
                     {isUploading ? 'Subiendo...' : 'Subir Folleto'}
                     {!isUploading && <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
                 </button>
             </div>
         </div>
 
-        {/* --- CONTENIDO CONDICIONAL (GRID vs LISTA) --- */}
         {viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
                 {filteredFolders.map(folder => (
@@ -202,7 +240,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                 })}
             </div>
         ) : (
-            // --- VISTA DE LISTA (TABLA) ---
             <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-50 border-b border-slate-100">
@@ -217,9 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                             <tr key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
                                 <td className="px-8 py-4">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500">
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                                        </div>
+                                        <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg></div>
                                         <span className="font-bold text-slate-700">{folder.name}</span>
                                     </div>
                                 </td>
@@ -231,17 +266,15 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                             <tr key={project.id} onClick={() => navigate(`/project/${project.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
                                 <td className="px-8 py-4">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 overflow-hidden">
+                                        <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 overflow-hidden">
                                             {project.versions[0]?.pages[0]?.imageUrl ? <img src={project.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
                                         </div>
                                         <span className="font-bold text-slate-700">{project.name}</span>
                                     </div>
                                 </td>
-                                <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Folleto ({project.versions[0]?.pages.length || 0} págs)</td>
+                                <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Folleto</td>
                                 <td className="px-8 py-4 text-right">
-                                    <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors">
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    </button>
+                                    <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                 </td>
                             </tr>
                         ))}
