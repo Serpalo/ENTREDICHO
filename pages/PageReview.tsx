@@ -25,9 +25,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   
   const [comment, setComment] = useState("");
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
-  const [isPinMode, setIsPinMode] = useState(false); // ¿Estamos poniendo chinchetas?
-  const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null); // Chincheta temporal antes de guardar
-  const [activePinId, setActivePinId] = useState<string | null>(null); // Para ver qué nota está abierta
+  const [isPinMode, setIsPinMode] = useState(false);
+  const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
+  const [activePinId, setActivePinId] = useState<string | null>(null);
 
   const project = projects.find(p => p.id === projectId);
   const version = project?.versions.find(v => v.id === versionId);
@@ -46,27 +46,24 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (data) setCommentsList(data);
   };
 
-  // 1. Detectar clic en la imagen/PDF para poner el punto
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isPinMode || !imageContainerRef.current) return;
 
     const rect = imageContainerRef.current.getBoundingClientRect();
-    // Calculamos el % relativo para que funcione en cualquier tamaño de pantalla
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
     setTempPin({ x, y });
-    setIsPinMode(false); // Desactivamos el modo tras hacer clic
+    setIsPinMode(false);
   };
 
-  // 2. Guardar la nota
   const handleSavePin = async () => {
     if (!comment.trim() || !pageId) return;
 
     const newComment = {
       content: comment,
       page_id: pageId,
-      x: tempPin?.x || 50, // Si no hay chincheta, al centro
+      x: tempPin?.x || 50,
       y: tempPin?.y || 50
     };
 
@@ -79,6 +76,23 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
       setComment("");
       setTempPin(null);
       if (addNotification) addNotification({ type: 'system', title: 'Nota añadida', message: 'Corrección fijada en el documento.', link: '#' });
+    }
+  };
+
+  // --- NUEVA FUNCIÓN PARA BORRAR ---
+  const handleDeleteComment = async (id: string) => {
+    if (!window.confirm("¿Seguro que quieres borrar esta corrección?")) return;
+
+    const { error } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('Error al borrar: ' + error.message);
+    } else {
+      setCommentsList(prev => prev.filter(c => c.id !== id)); // Lo quitamos de la lista visual
+      if (activePinId === id) setActivePinId(null); // Si estaba seleccionada, la deseleccionamos
     }
   };
 
@@ -100,38 +114,31 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           </div>
         </div>
         
-        {/* BOTÓN MODO CHINCHETA */}
         <div className="flex items-center gap-3">
            <button 
              onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); }}
              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-500 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-500'}`}
            >
              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-             {/* CAMBIO AQUÍ: TEXTO ACTUALIZADO */}
              {isPinMode ? 'Haz clic en el documento' : 'Añadir corrección'}
            </button>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* ÁREA DE VISUALIZACIÓN */}
         <div className="flex-1 overflow-auto flex items-center justify-center relative bg-slate-900/50 cursor-move">
-          
-          {/* Contenedor Relativo para posicionar las chinchetas */}
           <div 
             ref={imageContainerRef}
             onClick={handleCanvasClick}
             className={`relative shadow-2xl transition-all ${isPinMode ? 'cursor-crosshair ring-4 ring-rose-500/50' : ''}`}
             style={{ minWidth: '600px', minHeight: '800px', width: 'auto', height: '90%' }}
           >
-            {/* DOCUMENTO DE FONDO */}
             {isPdf ? (
               <iframe src={`${page.imageUrl}#toolbar=0`} className="w-full h-full border-none bg-white" title="Visor" />
             ) : (
               <img src={page.imageUrl} alt="Documento" className="w-full h-full object-contain bg-white" />
             )}
 
-            {/* MÁSCARA TRANSPARENTE (Solo activa en modo chincheta para capturar el clic sobre el PDF) */}
             {isPinMode && (
               <div className="absolute inset-0 bg-indigo-500/10 z-10">
                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-bounce">
@@ -140,7 +147,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
               </div>
             )}
 
-            {/* CHINCHETAS GUARDADAS */}
             {commentsList.map((c) => (
               <div 
                 key={c.id}
@@ -155,10 +161,53 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
               </div>
             ))}
 
-            {/* CHINCHETA TEMPORAL (La que estás creando) */}
             {tempPin && (
               <div 
                 className="absolute w-8 h-8 -ml-4 -mt-8 z-30"
                 style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}
               >
-                <svg className="w-full h-full text-indigo-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s
+                <svg className="w-full h-full text-indigo-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside className="w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-2xl z-40">
+          
+          {tempPin ? (
+            <div className="p-6 bg-indigo-50 border-b border-indigo-100 h-full flex flex-col">
+              <div className="flex items-center gap-2 mb-4 text-indigo-700 font-black uppercase text-xs tracking-widest">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                Nueva Nota
+              </div>
+              <textarea 
+                autoFocus
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Escribe aquí tu corrección..." 
+                className="flex-1 w-full bg-white border border-indigo-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-indigo-200 outline-none transition-all shadow-inner mb-4"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setTempPin(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
+                <button onClick={handleSavePin} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:-translate-y-1 transition-all">Guardar</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Notas ({commentsList.length})</h3>
+                <button onClick={() => { setIsPinMode(true); setTempPin(null); }} className="text-[10px] bg-rose-50 text-rose-600 px-3 py-1 rounded-full font-bold hover:bg-rose-100 transition-colors">+ Añadir</button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
+                {commentsList.length === 0 && <p className="text-center text-slate-400 text-xs py-10">Usa el botón "Añadir corrección" para empezar.</p>}
+                
+                {commentsList.map((c) => (
+                  <div 
+                    key={c.id} 
+                    onClick={() => setActivePinId(c.id)}
+                    className={`group relative p-4 rounded-xl border cursor-pointer transition-all ${activePinId === c.id ? 'bg-white border-rose-500 shadow-md ring-2 ring-rose-100' : 'bg-white border-slate-200 hover:border-indigo-300'}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-1 text-rose-500 flex-shrink-0">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 1
