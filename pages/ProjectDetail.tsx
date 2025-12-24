@@ -9,7 +9,8 @@ interface ProjectDetailProps {
   addNotification?: (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
 }
 
-const STATUS_OPTIONS: Record<string, string> = {
+// Opciones de colores para los estados
+const STATUS_COLORS: Record<string, string> = {
   '1ª corrección': 'bg-amber-100 text-amber-700 border-amber-200',
   '2ª corrección': 'bg-orange-100 text-orange-700 border-orange-200',
   '3ª corrección': 'bg-rose-100 text-rose-700 border-rose-200',
@@ -78,10 +79,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   };
 
   const handleNewVersionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 1. Verificación inicial: Si no hay archivos, cancelamos ANTES de activar la carga
     if (!e.target.files || e.target.files.length === 0 || !project) return;
+    
+    // 2. Activamos el estado de carga
     setIsUploadingVersion(true);
-    // No cerramos el modal inmediatamente para mostrar estado de carga si fuera necesario
-    // setShowUploadModal(false); 
 
     try {
         if (deadline) {
@@ -91,20 +93,26 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
 
         const maxV = Math.max(...project.versions.map(v => v.versionNumber), 0);
         const nextVersionNum = maxV + 1;
-        // Generamos el string de estado automáticamente
+        
+        // ESTADO AUTOMÁTICO: Calculamos "2ª corrección", etc.
         const automaticStatus = `${nextVersionNum}ª corrección`;
 
         const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            // Sanitizamos el nombre del archivo para evitar errores en Supabase Storage
+            const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${cleanFileName}`;
             
+            // Subir imagen
             const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
             if (uploadError) throw new Error("Error subiendo imagen: " + uploadError.message);
             
+            // Obtener URL
             const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
             
+            // Crear registro en BD con el ESTADO AUTOMÁTICO
             const { error: dbError } = await supabase.from('pages').insert([{ 
                 project_id: project.id, 
                 image_url: publicUrl, 
@@ -113,16 +121,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                 status: automaticStatus 
             }]);
 
-            if (dbError) throw new Error("Error guardando página en BD: " + dbError.message);
+            if (dbError) throw new Error("Error guardando datos: " + dbError.message);
         }
         
-        // Todo salió bien
+        // Si todo va bien, recargamos
         window.location.reload();
 
     } catch (err: any) {
       console.error(err);
-      alert("⚠️ Error al subir la nueva versión:\n" + (err.message || err));
+      // Mostramos el error exacto para saber qué pasa
+      alert("❌ Error: " + (err.message || "Ocurrió un error desconocido al subir."));
+      
+      // IMPORTANTE: Desbloqueamos la pantalla
       setIsUploadingVersion(false);
+      setShowUploadModal(false); 
     }
   };
 
@@ -138,13 +150,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   };
 
   const getStatusColor = (status: string) => {
-      return STATUS_OPTIONS[status] || 'bg-slate-100 text-slate-600 border-slate-200';
+      return STATUS_COLORS[status] || 'bg-slate-100 text-slate-600 border-slate-200';
   };
 
-  // Función para abrir el selector de archivos asegurando que está limpio
   const triggerFileInput = () => {
       if (fileInputRef.current) {
-          fileInputRef.current.value = ''; // Resetear valor para permitir seleccionar el mismo archivo
+          fileInputRef.current.value = ''; 
           fileInputRef.current.click();
       }
   };
@@ -156,20 +167,27 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={handleNewVersionUpload} />
       
       {showUploadModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in duration-200">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
                 <h3 className="text-lg font-black text-slate-800 mb-2">Subir Versión {Math.max(...project.versions.map(v => v.versionNumber)) + 1}</h3>
-                <p className="text-sm text-slate-500 mb-4">Define el nuevo plazo para revisar esta versión.</p>
+                <p className="text-sm text-slate-500 mb-4">Se asignará automáticamente el estado: <span className="font-bold text-rose-600">{Math.max(...project.versions.map(v => v.versionNumber)) + 1}ª corrección</span></p>
+                
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nueva fecha límite (Opcional)</label>
                 <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500 mb-6" />
+                
                 <div className="flex gap-3">
-                    <button onClick={() => setShowUploadModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200">Cancelar</button>
+                    <button onClick={() => setShowUploadModal(false)} disabled={isUploadingVersion} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50">Cancelar</button>
                     <button 
                         onClick={triggerFileInput} 
                         disabled={isUploadingVersion}
-                        className={`flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all ${isUploadingVersion ? 'opacity-50 cursor-wait' : ''}`}
+                        className={`flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all flex justify-center items-center gap-2 ${isUploadingVersion ? 'opacity-70 cursor-wait' : ''}`}
                     >
-                        {isUploadingVersion ? 'Subiendo...' : 'Seleccionar Archivos'}
+                        {isUploadingVersion ? (
+                            <>
+                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                Subiendo...
+                            </>
+                        ) : 'Seleccionar Archivos'}
                     </button>
                 </div>
             </div>
@@ -188,9 +206,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
 
             <div className="flex gap-3">
                  <button onClick={handleGenerateReport} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> Generar Informe</button>
-                 <button onClick={() => !isUploadingVersion && setShowUploadModal(true)} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl transition-all ${isUploadingVersion ? 'bg-slate-400' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-100'}`}>
-                    {isUploadingVersion ? 'Subiendo...' : 'Añadir Nueva Versión'}
-                    {!isUploadingVersion && <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>}
+                 <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl bg-rose-600 hover:bg-rose-700 shadow-rose-100 transition-all">
+                    Añadir Nueva Versión
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
                  </button>
             </div>
         </div>
@@ -226,8 +244,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
                               <td className="px-8 py-6 text-center">{count > 0 ? <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm shadow-rose-50"><span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>{count} PENDIENTES</div> : <span className="text-slate-200 text-[10px] font-black uppercase tracking-widest">Limpia</span>}</td>
                               <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}>
                                 <select value={page.status || '1ª corrección'} onChange={(e) => handleStatusChange(page.id, e.target.value)} className={`text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest border-2 cursor-pointer outline-none transition-all appearance-none shadow-sm ${getStatusColor(page.status || '')}`}>
-                                    {Object.keys(STATUS_OPTIONS).map(status => <option key={status} value={status}>{status}</option>)}
-                                    {!STATUS_OPTIONS[page.status || ''] && page.status && <option value={page.status}>{page.status}</option>}
+                                    {Object.keys(STATUS_COLORS).map(status => <option key={status} value={status}>{status}</option>)}
+                                    {!STATUS_COLORS[page.status || ''] && page.status && <option value={page.status}>{page.status}</option>}
                                 </select>
                               </td>
                               <td className="px-8 py-6 text-right"><button className="bg-rose-50 text-rose-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">Revisar</button><button onClick={(e) => {e.stopPropagation(); handleDeletePage(page.id)}} className="ml-2 bg-slate-50 text-slate-400 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">X</button></td>
