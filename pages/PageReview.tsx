@@ -9,14 +9,29 @@ interface PageReviewProps {
   addNotification?: (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => void;
 }
 
-interface Comment { id: string; content: string; created_at: string; page_id: string; x?: number; y?: number; resolved?: boolean; }
+interface Comment {
+  id: string;
+  content: string;
+  created_at: string;
+  page_id: string;
+  x?: number;
+  y?: number;
+  resolved?: boolean;
+  attachment_url?: string | null; // Nuevo campo para la imagen adjunta
+}
 
 const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotification }) => {
   const { projectId, versionId, pageId } = useParams<{ projectId: string; versionId: string; pageId: string }>();
   const navigate = useNavigate();
   const imageContainerRef = useRef<HTMLDivElement>(null);
   
+  // Ref para el input de archivo oculto
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  
   const [comment, setComment] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null); // Archivo seleccionado
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
   const [isPinMode, setIsPinMode] = useState(false);
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
@@ -33,7 +48,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const project = projects.find(p => p.id === projectId);
   
-  // VERIFICAR SI LA REVISIÓN ESTÁ BLOQUEADA POR FECHA
   const isReviewLocked = project && (project as any).review_deadline 
     ? new Date() > new Date((project as any).review_deadline) 
     : false;
@@ -92,7 +106,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Si está bloqueado, no permitimos poner chinchetas
     if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -103,14 +116,52 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const handleSavePin = async () => {
     if (!comment.trim() || !pageId) return;
-    const newComment = { content: comment, page_id: pageId, x: tempPin?.x || 50, y: tempPin?.y || 50, resolved: false };
+    setIsUploadingAttachment(true);
+
+    let uploadedUrl = null;
+
+    // 1. Si hay archivo adjunto, lo subimos primero
+    if (attachment) {
+        const fileName = `${projectId}-${Date.now()}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { error: uploadError } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
+        
+        if (uploadError) {
+            console.error("Error subiendo adjunto:", uploadError);
+            alert("Error al subir la imagen adjunta.");
+            setIsUploadingAttachment(false);
+            return;
+        }
+        
+        const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
+        uploadedUrl = publicUrl;
+    }
+
+    // 2. Guardamos el comentario con la URL
+    const newComment = { 
+        content: comment, 
+        page_id: pageId, 
+        x: tempPin?.x || 50, 
+        y: tempPin?.y || 50, 
+        resolved: false,
+        attachment_url: uploadedUrl 
+    };
+
     const { data, error } = await supabase.from('comments').insert([newComment]).select();
-    if (error) alert('Error: ' + error.message);
-    else if (data) { setCommentsList(prev => [data[0], ...prev]); setComment(""); setTempPin(null); if (addNotification) addNotification({ type: 'system', title: 'Nota añadida', message: 'Corrección fijada.', link: '#' }); }
+    
+    setIsUploadingAttachment(false);
+
+    if (error) {
+      alert('Error: ' + error.message);
+    } else if (data) {
+      setCommentsList(prev => [data[0], ...prev]);
+      setComment("");
+      setAttachment(null); // Limpiar adjunto
+      setTempPin(null);
+      if (addNotification) addNotification({ type: 'system', title: 'Nota añadida', message: 'Corrección fijada.', link: '#' });
+    }
   };
 
   const handleDeleteComment = async (id: string) => {
-    // Solo permitimos borrar si NO está bloqueado
     if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
     const { error } = await supabase.from('comments').delete().eq('id', id);
@@ -118,7 +169,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
-    // Solo permitimos resolver si NO está bloqueado
     if (isReviewLocked) return;
     const newStatus = !currentStatus;
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
@@ -212,9 +262,21 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
             <div className="p-6 bg-rose-50 border-b border-rose-100 h-full flex flex-col">
               <div className="flex items-center gap-2 mb-4 text-rose-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div>
               <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-rose-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-rose-200 outline-none transition-all shadow-inner mb-4" />
+              
+              {/* --- BOTÓN ADJUNTAR IMAGEN --- */}
+              <div className="mb-4">
+                  <input type="file" ref={attachmentInputRef} className="hidden" accept="image/*" onChange={(e) => setAttachment(e.target.files?.[0] || null)} />
+                  <button onClick={() => attachmentInputRef.current?.click()} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                      {attachment ? <span className="text-rose-600 truncate max-w-[200px]">{attachment.name}</span> : "Adjuntar Imagen de Referencia"}
+                  </button>
+              </div>
+
               <div className="flex gap-2">
-                <button onClick={() => setTempPin(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                <button onClick={handleSavePin} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all">Guardar</button>
+                <button onClick={() => { setTempPin(null); setAttachment(null); }} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
+                <button onClick={handleSavePin} disabled={isUploadingAttachment} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-wait">
+                    {isUploadingAttachment ? 'Subiendo...' : 'Guardar'}
+                </button>
               </div>
             </div>
           ) : (
@@ -230,6 +292,20 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                       <div className="mt-1"><input type="checkbox" checked={c.resolved || false} disabled={isReviewLocked} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"/></div>
                       <div className="flex-1">
                         <p className={`text-sm font-medium leading-relaxed ${c.resolved ? 'text-emerald-800 line-through opacity-70' : 'text-rose-900'}`}>{c.content}</p>
+                        
+                        {/* --- MOSTRAR ADJUNTO SI EXISTE --- */}
+                        {c.attachment_url && (
+                            <div className="mt-3">
+                                <a href={c.attachment_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:border-rose-300 transition-colors group/link">
+                                    <div className="w-8 h-8 bg-slate-100 rounded bg-cover bg-center" style={{ backgroundImage: `url(${c.attachment_url})` }}></div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p>
+                                    </div>
+                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                </a>
+                            </div>
+                        )}
+
                         <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
                       </div>
                       {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
