@@ -52,7 +52,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   let version: any = null;
   let page: any = null;
-  // Variables para navegación
+  // Variables para navegación entre páginas
   let prevPageId: string | null = null;
   let nextPageId: string | null = null;
 
@@ -80,7 +80,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         setTempPin(null);
     } 
     if (page) fetchPreviousVersion();
-  }, [pageId, page]); // Dependencia clave: pageId
+  }, [pageId, page]);
 
   const fetchComments = async () => {
     const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
@@ -91,7 +91,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (!page || !page.version || page.version <= 1) return;
     const { data } = await supabase.from('pages').select('image_url').eq('project_id', projectId).eq('page_number', page.pageNumber).lt('version', page.version).order('version', { ascending: false }).limit(1).single();
     if (data) setPreviousPageUrl(data.image_url);
-    else setPreviousPageUrl(null); // Limpiar si no hay previa
+    else setPreviousPageUrl(null);
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -141,13 +141,25 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (attachment) {
         const fileName = `${projectId}-${Date.now()}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const { error: uploadError } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
-        if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
-            uploadedUrl = publicUrl;
+        if (uploadError) {
+            console.error(uploadError);
+            alert("Error al subir imagen (revisa permisos en Supabase).");
+            setIsUploadingAttachment(false);
+            return;
         }
+        const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
+        uploadedUrl = publicUrl;
     }
 
-    const newComment = { content: comment, page_id: pageId, x: tempPin?.x || 50, y: tempPin?.y || 50, resolved: false, attachment_url: uploadedUrl };
+    const newComment = { 
+        content: comment, 
+        page_id: pageId, 
+        x: tempPin?.x || 50, 
+        y: tempPin?.y || 50, 
+        resolved: false,
+        attachment_url: uploadedUrl 
+    };
+
     const { data, error } = await supabase.from('comments').insert([newComment]).select();
     setIsUploadingAttachment(false);
 
@@ -204,7 +216,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         </div>
         
         <div className="flex items-center gap-3">
-            {/* --- FLECHAS DE NAVEGACIÓN --- */}
+            {/* FLECHAS DE NAVEGACIÓN */}
             <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2">
                 <button 
                     onClick={() => navigateToPage(prevPageId)} 
@@ -315,4 +327,38 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Notas ({commentsList.length})</h3>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
-                {commentsList.map((c)
+                {commentsList.map((c) => (
+                  <div key={c.id} onClick={() => setActivePinId(c.id)} className={`group relative p-4 rounded-xl border transition-all ${activePinId === c.id ? 'ring-2 ring-offset-1' : ''} ${c.resolved ? 'bg-emerald-50 border-emerald-200 ring-emerald-200' : 'bg-rose-50 border-rose-200 ring-rose-200'}`}>
+                    <div className="flex items-start gap-3">
+                      <div className="mt-1"><input type="checkbox" checked={c.resolved || false} disabled={isReviewLocked} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"/></div>
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium leading-relaxed ${c.resolved ? 'text-emerald-800 line-through opacity-70' : 'text-rose-900'}`}>{c.content}</p>
+                        
+                        {c.attachment_url && (
+                            <div className="mt-3">
+                                <a href={c.attachment_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:border-rose-300 transition-colors group/link">
+                                    <div className="w-8 h-8 bg-slate-100 rounded bg-cover bg-center" style={{ backgroundImage: `url(${c.attachment_url})` }}></div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p>
+                                    </div>
+                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                </a>
+                            </div>
+                        )}
+
+                        <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
+                      </div>
+                      {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+export default PageReview;
