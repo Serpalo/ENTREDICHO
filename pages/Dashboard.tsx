@@ -204,7 +204,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
       if (data && data.length > 0) {
         const savedProject = data[0];
-        const realId = savedProject.id.toString();
+        const realId = savedProject.id.toString();}
 
         // 3. ACTUALIZAR ESTADO LOCAL (Con el ID real de la base de datos)
         const newProject: Project = {
