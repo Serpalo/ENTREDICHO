@@ -175,29 +175,49 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     setItemToDelete(item);
   };
 
+  // --- FUNCIÓN ACTUALIZADA PARA SUBIR IMÁGENES A SUPABASE STORAGE ---
   const handleFilesUpload = async (files: FileList | File[], targetFolderId: string | null = currentFolderId) => {
     const file = files[0];
     if (!file) return;
 
-    // 1. Preparamos el nombre
+    // 1. Preparamos nombres
     const projectName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
+    // Nombre único para el archivo (timestamp + nombre limpio)
+    const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
 
     try {
-      // 2. GUARDAR EN SUPABASE (Insertamos en la tabla 'projects')
+      // 2. SUBIR AL STORAGE (BUCKET 'brochures')
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('brochures')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        console.error('Error subiendo archivo:', uploadError);
+        alert('Error al subir la imagen. Asegúrate de haber creado el bucket "brochures" y hacerlo público.');
+        return;
+      }
+
+      // 3. OBTENER URL PÚBLICA
+      const { data: { publicUrl } } = supabase.storage
+        .from('brochures')
+        .getPublicUrl(fileName);
+
+      // 4. GUARDAR EN BASE DE DATOS (CON LA FOTO)
       const { data, error } = await supabase
         .from('projects')
         .insert([
           { 
             title: projectName, 
             status: 'active', 
-            description: 'Subido desde Dashboard' 
+            description: 'Subido desde Dashboard',
+            image_url: publicUrl // <--- Aquí guardamos el enlace
           }
         ])
-        .select(); // Importante: pedimos que nos devuelva el dato creado (con su ID)
+        .select();
 
       if (error) {
-        console.error('Error al guardar en Supabase:', error);
-        alert('Hubo un error al guardar el proyecto en la nube.');
+        console.error('Error DB:', error);
+        alert('Error al guardar en la base de datos.');
         return;
       }
 
@@ -205,20 +225,35 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         const savedProject = data[0];
         const realId = savedProject.id.toString();
 
-        // 3. ACTUALIZAR ESTADO LOCAL (Con el ID real de la base de datos)
+        // 5. ACTUALIZAR ESTADO LOCAL VISUAL
         const newProject: Project = {
           id: realId,
           name: projectName,
           parentId: targetFolderId,
           type: 'project',
-          versions: [],
+          versions: [
+             {
+               id: `v1-${realId}`,
+               versionNumber: 1,
+               createdAt: new Date(),
+               isActive: true,
+               pages: [
+                 {
+                   id: `pg1-${realId}`,
+                   pageNumber: 1,
+                   imageUrl: publicUrl, // <--- Usamos la URL real
+                   status: 'first_version' as any,
+                   approvals: {},
+                   comments: []
+                 }
+               ]
+             }
+          ],
           advertisingEmails: [],
           productDirectionEmails: []
         };
 
         setProjects(prev => [newProject, ...prev]);
-        
-        // 4. Navegar al nuevo proyecto
         setTimeout(() => navigate(`/project/${realId}`), 100);
       }
 
