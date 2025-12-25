@@ -57,16 +57,25 @@ const App: React.FC = () => {
   return (
     <Router>
       <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans">
-        {/* HEADER CON EL LOGOTIPO CORRECTO */}
+        {/* HEADER CON LOGOTIPO DE ALCAMPO CORREGIDO */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-50 shadow-sm">
           <Link to="/" className="flex items-center gap-3">
-             <img 
-                src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" 
-                alt="Alcampo" 
-                className="h-8 w-auto object-contain" 
-             />
+             <div className="flex items-center gap-2">
+                <img 
+                  src="https://www.alcampo.es/o/alcampo-theme/images/logo-alcampo.png" 
+                  alt="Alcampo" 
+                  className="h-8 w-auto object-contain" 
+                  onError={(e) => {
+                    // Si falla la imagen oficial, ponemos un texto de seguridad
+                    e.currentTarget.style.display = 'none';
+                    const span = e.currentTarget.nextElementSibling as HTMLElement;
+                    if(span) span.style.display = 'block';
+                  }}
+                />
+                <span className="hidden text-xl font-bold text-red-600">Alcampo</span>
+             </div>
              <div className="h-6 w-[1px] bg-slate-200 mx-1"></div>
-             <span className="text-2xl font-black text-rose-600 tracking-tighter italic">Flow</span>
+             <span className="text-2xl font-black text-rose-600 italic tracking-tighter" style={{ fontFamily: 'sans-serif' }}>Flow</span>
           </Link>
           <div className="flex items-center gap-4 text-slate-400">
              <button className="hover:text-rose-600 transition-colors text-xl">🔔</button>
