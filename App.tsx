@@ -9,14 +9,14 @@ export default function App() {
   const [projects, setProjects] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
 
-  // Función para obtener todos los datos de Supabase
+  // Función para obtener y formatear todos los datos de Supabase
   const fetchData = async () => {
     const { data: pData } = await supabase.from('projects').select('*');
     const { data: fData } = await supabase.from('folders').select('*');
     const { data: pgData } = await supabase.from('pages').select('*').order('page_number', { ascending: true });
 
     if (pData && pgData) {
-      // Agrupamos versiones para evitar duplicados en el Dashboard
+      // Agrupamos versiones para que el Dashboard solo muestre una tarjeta por proyecto
       const formattedProjects = pData.map(proj => {
         const projPages = pgData.filter(pg => pg.project_id === proj.id);
         const versionsMap: any = {};
@@ -40,6 +40,7 @@ export default function App() {
           id: proj.id,
           name: proj.title || proj.name,
           parentId: proj.parent_id,
+          // Ordenamos para que la última versión sea la mostrada por defecto
           versions: Object.values(versionsMap).sort((a: any, b: any) => a.versionNumber - b.versionNumber)
         };
       });
@@ -61,13 +62,13 @@ export default function App() {
 
   return (
     <Routes>
-      {/* RUTA RAÍZ: Muestra "MIS PROYECTOS" */}
+      {/* RUTA PRINCIPAL */}
       <Route 
         path="/" 
         element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} 
       />
       
-      {/* RUTA DE CARPETA: Esencial para que el título cambie a "UNICO" */}
+      {/* RUTA DE CARPETA: Crucial para detectar el ID y cambiar el título a "UNICO" */}
       <Route 
         path="/folder/:folderId" 
         element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} 
@@ -79,7 +80,7 @@ export default function App() {
         element={<ProjectDetail projects={projects} />} 
       />
       
-      {/* Vista de revisión de página */}
+      {/* Pantalla de revisión */}
       <Route 
         path="/project/:projectId/version/:versionId/page/:pageId" 
         element={<Revision projects={projects} />} 
