@@ -16,18 +16,18 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sliderRef = useRef<HTMLDivElement>(null);
   
-  // HERRAMIENTAS
+  // --- HERRAMIENTAS ---
   const [scale, setScale] = useState(1);
   const [showResolved, setShowResolved] = useState(true);
   
-  // ESTADOS DE COMENTARIOS
+  // --- ESTADOS DE COMENTARIOS ---
   const [comment, setComment] = useState("");
   const [commentsList, setCommentsList] = useState<any[]>([]);
   const [isPinMode, setIsPinMode] = useState(false);
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
-  // ESTADOS COMPARADOR
+  // --- ESTADOS COMPARADOR ---
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [compareVersionId, setCompareVersionId] = useState<string>("");
   const [sliderPosition, setSliderPosition] = useState(50);
@@ -45,7 +45,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
-  // Comprobar si hay historial (Más de 1 versión)
+  // Verificar si hay más versiones para comparar
   const hasHistory = project && project.versions.length > 1;
 
   const getCompareImage = () => {
@@ -120,55 +120,52 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
          onTouchMove={isDraggingSlider ? (e) => handleSliderMove(e) : undefined}
          onTouchEnd={() => setIsDraggingSlider(false)}
     >
-      {/* HEADER */}
+      {/* --- HEADER --- */}
       <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 z-50 shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white flex items-center gap-1">← Volver</button>
             <h1 className="font-bold truncate max-w-xs text-sm md:text-base hidden md:block">{project.name} <span className="text-slate-500 font-normal">/ Pág {page.pageNumber}</span></h1>
           </div>
           
-          {/* ZOOM SIEMPRE VISIBLE */}
+          {/* ZOOM CENTRADO */}
           <div className="flex items-center gap-2 bg-slate-700 p-1 rounded-lg absolute left-1/2 -translate-x-1/2">
                 <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))} className="p-1 px-2 hover:bg-slate-600 rounded">➖</button>
                 <span className="text-xs font-mono w-10 text-center">{Math.round(scale * 100)}%</span>
                 <button onClick={() => setScale(s => Math.min(s + 0.2, 4))} className="p-1 px-2 hover:bg-slate-600 rounded">➕</button>
           </div>
 
-          {/* HERRAMIENTAS DERECHA: COMPARAR Y AÑADIR NOTA */}
+          {/* HERRAMIENTAS DERECHA (SIN COLORES) */}
           <div className="flex items-center gap-3">
              
-             {/* 1. SELECTOR DE VERSIÓN (Solo visible si estamos comparando) */}
+             {/* SELECTOR DE VERSIÓN PARA COMPARAR (Aparece al activar comparar) */}
              {isCompareMode && (
                 <select 
-                    className="bg-slate-900 border border-indigo-500 rounded px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="bg-slate-900 border border-blue-500 rounded px-2 py-1.5 text-xs outline-none"
                     onChange={(e) => setCompareVersionId(e.target.value)}
                     value={compareVersionId}
                 >
-                    <option value="">Elegir versión...</option>
+                    <option value="">¿Contra qué versión?</option>
                     {project.versions.filter(v => v.id !== versionId).map(v => (
                         <option key={v.id} value={v.id}>Versión {v.versionNumber}</option>
                     ))}
                 </select>
              )}
 
-             {/* 2. BOTÓN COMPARAR (SIEMPRE VISIBLE, PERO DESACTIVADO SI NO HAY HISTORIAL) */}
+             {/* BOTÓN COMPARAR (AZUL) */}
              <button 
-                disabled={!hasHistory}
                 onClick={() => { setIsCompareMode(!isCompareMode); setIsPinMode(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-sm transition-all
-                    ${!hasHistory 
-                        ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' // Estilo Desactivado
-                        : isCompareMode 
-                            ? 'bg-indigo-600 border-indigo-500 text-white' // Estilo Activo
-                            : 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500' // Estilo Normal
-                    }`}
-                title={!hasHistory ? "Sube otra versión para comparar" : "Comparar versiones"}
+                // Si no hay historial, se ve gris (disabled). Si hay historial, azul brillante.
+                disabled={!hasHistory}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all border
+                    ${!hasHistory ? 'bg-slate-700 text-slate-500 border-slate-600 cursor-not-allowed' : 
+                      isCompareMode ? 'bg-white text-blue-600 border-white' : 'bg-blue-600 text-white border-blue-500 hover:bg-blue-500'}`}
              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                {/* ICONO DE COMPARAR */}
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                 {isCompareMode ? 'Salir' : 'Comparar'}
              </button>
 
-             {/* 3. BOTÓN AÑADIR NOTA */}
+             {/* BOTÓN AÑADIR NOTA (ROJO) */}
              {!isCompareMode && (
                  <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border border-transparent ${isPinMode ? 'bg-white text-slate-900 animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
                     {isPinMode ? '📍 Clic en imagen' : 'Añadir Nota'}
@@ -177,11 +174,11 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           </div>
       </header>
 
-      {/* ÁREA DE TRABAJO */}
+      {/* --- ÁREA DE TRABAJO --- */}
       <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-slate-950/50" onWheel={handleWheel}>
             
-            {/* VISTA NORMAL */}
+            {/* 1. MODO NORMAL (PINES) */}
             {!isCompareMode && (
                 <div 
                     ref={imageContainerRef} 
@@ -192,6 +189,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                     <img src={page.imageUrl} alt="Page" className="max-h-[85vh] object-contain select-none" />
                     {commentsList.filter(c => showResolved || !c.resolved).map((c, i) => (
                         <div key={c.id} className="group absolute w-8 h-8 -ml-4 -mt-4 cursor-pointer z-10" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
+                            {/* PIN SIEMPRE ROJO (Ya que quitamos los colores) */}
                             <div className={`w-full h-full rounded-full border-2 border-white shadow-md flex items-center justify-center text-xs font-bold ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'}`}>{i + 1}</div>
                         </div>
                     ))}
@@ -199,24 +197,29 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 </div>
             )}
 
-            {/* VISTA COMPARAR */}
+            {/* 2. MODO COMPARAR (SLIDER) */}
             {isCompareMode && (
                 <div ref={sliderRef} className="relative max-h-[85vh] select-none shadow-2xl" style={{ transform: `scale(${scale})` }}>
+                     {/* Imagen NUEVA (Fondo) */}
                      <img src={page.imageUrl} className="max-h-[85vh] object-contain pointer-events-none" />
+                     
+                     {/* Imagen ANTIGUA (Sobrepuesta con recorte) */}
                      {compareImageUrl ? (
                         <div className="absolute top-0 left-0 h-full w-full overflow-hidden border-r-2 border-white bg-slate-900" style={{ width: `${sliderPosition}%` }}>
                              <img src={compareImageUrl} className="max-h-[85vh] object-contain" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none' }} />
-                             <div className="absolute top-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded font-bold">ANTES</div>
+                             <div className="absolute top-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded font-bold border border-white/20">ANTES</div>
                         </div>
                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white font-bold p-4 rounded text-center">
-                            ⬇ Selecciona una versión antigua arriba para comparar ⬇
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white font-bold p-6 rounded-xl border border-white/10 backdrop-blur-sm">
+                            <p>⬇ Selecciona una versión antigua en el menú de arriba ⬇</p>
                         </div>
                      )}
+                     
+                     {/* BARRA DESLIZANTE */}
                      {compareImageUrl && (
                         <div className="absolute top-0 bottom-0 w-8 -ml-4 cursor-ew-resize z-20 flex items-center justify-center" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)} onTouchStart={() => setIsDraggingSlider(true)}>
-                            <div className="w-1 h-full bg-white shadow-lg"></div>
-                            <div className="w-8 h-8 bg-white rounded-full absolute shadow-xl flex items-center justify-center text-slate-900 font-bold text-xs">↔</div>
+                            <div className="w-1 h-full bg-white shadow-[0_0_15px_rgba(0,0,0,0.5)]"></div>
+                            <div className="w-8 h-8 bg-white rounded-full absolute shadow-xl flex items-center justify-center text-slate-900 font-bold text-xs border border-slate-200">↔</div>
                         </div>
                      )}
                 </div>
