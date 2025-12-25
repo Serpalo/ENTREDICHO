@@ -6,6 +6,7 @@ const Dashboard = ({ projects, folders, setFolders }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [isUploading, setIsUploading] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -13,12 +14,50 @@ const Dashboard = ({ projects, folders, setFolders }: any) => {
   const currentProjects = projects.filter((p: any) => folderId ? p.parentId === folderId : !p.parentId);
   const currentFolders = folders.filter((f: any) => folderId ? f.parentId === folderId : !f.parentId);
 
+  // FUNCIÓN PARA CREAR CARPETA CORREGIDA
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      setShowNewFolder(false);
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .insert([{ 
+          name: newFolderName, 
+          parent_id: folderId || null 
+        }])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        setFolders([...folders, { 
+          id: data[0].id.toString(), 
+          name: data[0].name, 
+          type: 'folder', 
+          parentId: folderId || null 
+        }]);
+        setNewFolderName("");
+        setShowNewFolder(false);
+      }
+    } catch (err: any) {
+      alert("Error al crear carpeta: " + err.message);
+    }
+  };
+
   const handleFileUpload = async (e: any) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
     const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
     const name = files[0].name.split('.')[0];
-    const { data: pData } = await supabase.from('projects').insert([{ title: name, name: name, status: 'revisión', parent_id: folderId || null }]).select();
+    
+    const { data: pData } = await supabase
+      .from('projects')
+      .insert([{ title: name, name: name, status: 'revisión', parent_id: folderId || null }])
+      .select();
+
     if (pData) {
       for (let i = 0; i < files.length; i++) {
         const file = files[i] as File;
@@ -45,10 +84,39 @@ const Dashboard = ({ projects, folders, setFolders }: any) => {
       <div className="flex justify-between items-center mb-12">
         <h2 className="text-4xl font-black text-slate-800 tracking-tight uppercase">Mis Proyectos</h2>
         <div className="flex gap-4">
-          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-white border-2 border-slate-200 font-black rounded-2xl text-[10px] uppercase tracking-wider hover:border-slate-400 transition-all">+ Carpeta</button>
-          <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-wider shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all">{isUploading ? 'Subiendo...' : 'Subir Folleto'}</button>
+          {/* EL BOTÓN AHORA ACTIVA EL CAMPO DE TEXTO */}
+          <button 
+            onClick={() => setShowNewFolder(true)} 
+            className="px-6 py-3 bg-white border-2 border-slate-200 font-black rounded-2xl text-[10px] uppercase tracking-wider hover:border-slate-400 transition-all"
+          >
+            + Carpeta
+          </button>
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            className="px-8 py-3 bg-rose-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-wider shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all"
+          >
+            {isUploading ? 'Subiendo...' : 'Subir Folleto'}
+          </button>
         </div>
       </div>
+
+      {/* BLOQUE PARA ESCRIBIR EL NOMBRE DE LA CARPETA */}
+      {showNewFolder && (
+        <div className="mb-10 p-8 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <input 
+            autoFocus 
+            className="flex-1 bg-slate-50 rounded-2xl p-4 font-bold outline-none border-2 border-transparent focus:border-rose-600 transition-all" 
+            placeholder="Escribe el nombre de la carpeta..." 
+            value={newFolderName} 
+            onChange={e => setNewFolderName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+          />
+          <div className="flex gap-2">
+            <button onClick={() => setShowNewFolder(false)} className="px-6 py-4 font-black text-[10px] text-slate-400 uppercase">Cancelar</button>
+            <button onClick={handleCreateFolder} className="bg-slate-800 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] shadow-xl">Crear Carpeta</button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
         {currentFolders.map((f: any) => (
@@ -59,9 +127,7 @@ const Dashboard = ({ projects, folders, setFolders }: any) => {
         ))}
 
         {currentProjects.map((p: any) => {
-          // Tomamos siempre la versión más reciente para la miniatura y el enlace
           const latestVersion = p.versions[p.versions.length - 1];
-          
           return (
             <div 
               key={p.id} 
@@ -74,21 +140,14 @@ const Dashboard = ({ projects, folders, setFolders }: any) => {
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px] uppercase italic">Sin previa</div>
                 )}
-                {/* Indicador visual de la versión más reciente */}
                 <div className="absolute top-4 right-4 bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">
                   V{latestVersion?.versionNumber}
                 </div>
               </div>
-
-              <h3 className="font-black text-sm truncate text-slate-800 uppercase px-2 mb-2 tracking-tighter">
-                {p.name}
-              </h3>
-              
+              <h3 className="font-black text-sm truncate text-slate-800 uppercase px-2 mb-2 tracking-tighter">{p.name}</h3>
               <div className="flex items-center gap-2 px-2 mt-auto">
                 <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                  {getCorrectionName(latestVersion?.versionNumber)}
-                </span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{getCorrectionName(latestVersion?.versionNumber)}</span>
               </div>
             </div>
           );
