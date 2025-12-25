@@ -39,7 +39,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [isDragging, setIsDragging] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   
-  // --- ESTADOS DEL COMPARADOR ---
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [previousPageUrl, setPreviousPageUrl] = useState<string | null>(null);
@@ -47,9 +46,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const project = projects.find(p => p.id === projectId);
   
-  const isReviewLocked = project && (project as any).review_deadline 
-    ? new Date() > new Date((project as any).review_deadline) 
-    : false;
+  // LOGICA DE BLOQUEO REFORZADA
+  const deadlineString = (project as any)?.review_deadline;
+  const isReviewLocked = deadlineString ? new Date() > new Date(deadlineString) : false;
 
   let version: any = null;
   let page: any = null;
@@ -69,7 +68,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
-  // Cargar comentarios
   const fetchComments = async () => {
     if (!pageId) return;
     const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
@@ -81,13 +79,11 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   };
 
-  // Cargar versión anterior para comparar
   const fetchPreviousVersion = async () => {
     if (!page || !page.version || page.version <= 1) {
         setPreviousPageUrl(null);
         return;
     }
-    // Buscamos la misma página (mismo page_number) pero de una versión menor
     const { data } = await supabase.from('pages')
         .select('image_url')
         .eq('project_id', projectId)
@@ -107,12 +103,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         setTransform({ scale: 1, x: 0, y: 0 });
         setIsPinMode(false);
         setTempPin(null);
-        setIsCompareMode(false); // Resetear comparador al cambiar de página
+        setIsCompareMode(false); 
 
-        // Auto-actualización (Plan B)
         const intervalId = setInterval(fetchComments, 3000);
-
-        // Realtime (Plan A)
         const channel = supabase
           .channel('any')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => fetchComments())
@@ -125,7 +118,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     } 
   }, [pageId]);
 
-  // Efecto separado para buscar la versión anterior cuando carga la página
   useEffect(() => {
       if (page) fetchPreviousVersion();
   }, [page, projectId]);
@@ -145,10 +137,8 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    // LÓGICA DEL SLIDER DEL COMPARADOR
     if (isDraggingSlider && imageContainerRef.current) {
         const rect = imageContainerRef.current.getBoundingClientRect();
-        // Calculamos posición relativa dentro de la imagen
         const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
         const percent = (x / rect.width) * 100;
         setSliderPosition(percent);
@@ -164,7 +154,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // AQUÍ ESTÁ LA CLAVE: Si está bloqueado, NO permitimos poner el pin
     if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
+    
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
@@ -173,6 +165,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleSavePin = async () => {
+    if (isReviewLocked) { alert("El plazo ha expirado."); return; } // Bloqueo extra
     if (!comment.trim() || !pageId) return;
     setIsUploadingAttachment(true);
 
@@ -210,7 +203,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleDeleteComment = async (id: string) => {
-    if (isReviewLocked) return;
+    if (isReviewLocked) return; // Bloqueo de borrado
     if (!window.confirm("¿Borrar corrección?")) return;
     setCommentsList(prev => prev.filter(c => c.id !== id));
     if (activePinId === id) setActivePinId(null);
@@ -218,7 +211,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
-    if (isReviewLocked) return;
+    if (isReviewLocked) return; // Bloqueo de checkbox
     const newStatus = !currentStatus;
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
     await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
@@ -269,7 +262,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 <button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-rose-500 font-bold text-xs">1:1</button>
             </div>
 
-            {/* --- BOTÓN COMPARADOR (Solo visible si hay versión previa) --- */}
             {previousPageUrl && (
                 <button onClick={() => setIsCompareMode(!isCompareMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all ${isCompareMode ? 'bg-amber-500 text-white shadow-lg ring-4 ring-amber-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
@@ -291,14 +283,12 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           <div ref={imageContainerRef} onClick={handleCanvasClick} className="relative shadow-2xl transition-transform duration-75 ease-out origin-center" style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, minWidth: '600px', width: 'auto' }}>
             <img src={page.imageUrl} alt="Actual" className="max-w-none block select-none pointer-events-none" style={{ height: 'auto', width: 'auto', maxHeight: '90vh' }} />
 
-            {/* --- VISUALIZACIÓN DEL COMPARADOR --- */}
             {isCompareMode && previousPageUrl && (
                 <>
                     <div className="absolute inset-0 overflow-hidden select-none pointer-events-none border-r-2 border-amber-400 bg-slate-900" style={{ width: `${sliderPosition}%` }}>
                         <img src={previousPageUrl} alt="Anterior" className="max-w-none block" style={{ height: '100%', width: 'auto', maxWidth: 'none' }} />
                         <div className="absolute top-4 left-4 bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl">VERSIÓN ANTERIOR</div>
                     </div>
-                    {/* Barra deslizante (Handle) */}
                     <div className="absolute inset-y-0 w-8 -ml-4 cursor-ew-resize z-50 flex items-center justify-center group" style={{ left: `${sliderPosition}%` }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingSlider(true); }}>
                         <div className="w-0.5 h-full bg-amber-400 shadow-[0_0_10px_rgba(0,0,0,0.5)]"></div>
                         <div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute hover:scale-110 transition-transform">
@@ -311,7 +301,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
             {!isCompareMode && (
                 <>
-                    {isPinMode && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
+                    {isPinMode && !isReviewLocked && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
                     {commentsList.map((c) => (
                         <div key={c.id} onClick={(e) => { e.stopPropagation(); setActivePinId(activePinId === c.id ? null : c.id); }} className="absolute w-8 h-8 -ml-4 -mt-8 z-20 cursor-pointer group hover:z-30" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
                             <svg className={`w-full h-full drop-shadow-md transition-colors ${c.resolved ? 'text-emerald-500' : 'text-rose-500'}`} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
@@ -371,24 +361,4 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p>
                                     </div>
-                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                </a>
-                            </div>
-                        )}
-
-                        <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
-                      </div>
-                      {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </aside>
-      </div>
-    </div>
-  );
-};
-
-export default PageReview;
+                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4
