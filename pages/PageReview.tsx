@@ -22,9 +22,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const project = projects.find(p => p.id === projectId);
   
-  // SIN BLOQUEOS DE FECHA
-  const isReviewLocked = false; 
-
   let version: any = null;
   let page: any = null;
 
@@ -36,11 +33,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   }
 
   useEffect(() => {
-    if (pageId) {
-        fetchComments();
-        const interval = setInterval(fetchComments, 3000);
-        return () => clearInterval(interval);
-    } 
+    if (pageId) fetchComments();
   }, [pageId]);
 
   const fetchComments = async () => {
