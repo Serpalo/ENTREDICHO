@@ -22,33 +22,31 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [compareVersionId, setCompareVersionId] = useState("");
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
-  // BUSQUEDA DE DATOS
   const project = projects.find(p => p.id === projectId);
   let page: any = null;
   let allPages: any[] = [];
-  let currentVer: any = null;
 
   if (project) {
     project.versions.forEach(v => {
       const found = v.pages.find(p => p.id === pageId);
-      if (found) {
-        page = found;
-        allPages = v.pages;
-        currentVer = v;
-      }
+      if (found) { page = found; allPages = v.pages; }
     });
   }
 
-  // NAVEGACIÓN Y COMPARACIÓN
-  const currentIndex = allPages.findIndex(p => p.id === pageId);
-  const prevPage = allPages[currentIndex - 1];
-  const nextPage = allPages[currentIndex + 1];
-  const otherVersions = project ? project.versions.filter(v => v.id !== versionId) : [];
-  const compareImageUrl = compareVersionId 
-    ? project?.versions.find(v => v.id === compareVersionId)?.pages.find((p:any) => p.pageNumber === page?.pageNumber)?.imageUrl 
-    : null;
+  // --- ESCUCHA EN TIEMPO REAL PARA COLABORACIÓN ---
+  useEffect(() => {
+    if (!pageId) return;
+    
+    fetchComments();
 
-  useEffect(() => { if(pageId) fetchComments(); }, [pageId]);
+    // Suscribirse a cambios: si alguien más borra, edita o crea una nota
+    const channel = supabase.channel(`comments-${pageId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
+      () => fetchComments())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [pageId]);
 
   const fetchComments = async () => {
     const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
@@ -70,13 +68,17 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
         content: text, page_id: pageId, x: tempPin.x, y: tempPin.y, resolved: false, image_url: finalUrl
       }]);
       if (error) throw error;
-      fetchComments();
       setTempPin(null);
       setFileToUpload(null);
     } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
   };
 
-  if (!page) return <div className="p-10 bg-slate-50 h-screen flex items-center justify-center font-bold">Cargando datos...</div>;
+  const toggleResolved = async (id: string, currentStatus: boolean) => {
+    await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', id);
+    // No hace falta actualizar el estado aquí, el canal de tiempo real lo hará solo
+  };
+
+  if (!page) return <div className="p-10 bg-white h-screen flex items-center justify-center font-bold italic text-slate-400">Sincronizando...</div>;
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden"
@@ -91,29 +93,15 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
             <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors">← VOLVER</button>
             <h1 className="font-black text-slate-800 tracking-tight">{project?.name} <span className="text-slate-300 font-medium">/ Pág {page.pageNumber}</span></h1>
           </div>
-          <div className="flex items-center gap-4">
-             {otherVersions.length > 0 && (
-                 <div className="flex items-center gap-2">
-                    {isCompareMode && (
-                        <select className="bg-white border rounded-xl px-3 py-1.5 text-[10px] font-black uppercase outline-none" onChange={(e) => setCompareVersionId(e.target.value)} value={compareVersionId}>
-                            <option value="">¿Versión?</option>
-                            {otherVersions.map(v => <option key={v.id} value={v.id}>v{v.versionNumber}</option>)}
-                        </select>
-                    )}
-                    <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-blue-600 border-blue-100'}`}>
-                        {isCompareMode ? 'Salir' : 'Comparar'}
-                    </button>
-                 </div>
-             )}
-             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg shadow-rose-100 transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
-                {isPinMode ? '📍 TOCA LA IMAGEN' : 'MARCAR CORRECCIÓN'}
-             </button>
-          </div>
+          <button onClick={() => setIsPinMode(!isPinMode)} className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
+            {isPinMode ? '📍 SELECCIONA EN IMAGEN' : 'MARCAR CORRECCIÓN'}
+          </button>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 hover:bg-white text-slate-400 rounded-full shadow-2xl border flex items-center justify-center font-black transition-all">←</button>}
-          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 hover:bg-white text-slate-400 rounded-full shadow-2xl border flex items-center justify-center font-black transition-all">→</button>}
+          {/* BOTONES NAVEGACIÓN */}
+          {allPages[allPages.findIndex(p => p.id === pageId) - 1] && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${allPages[allPages.findIndex(p => p.id === pageId) - 1].id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
+          {allPages[allPages.findIndex(p => p.id === pageId) + 1] && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${allPages[allPages.findIndex(p => p.id === pageId) + 1].id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
 
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
             {!isCompareMode ? (
@@ -137,16 +125,13 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                              <img src={compareImageUrl} className="max-h-[82vh]" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none', height: '100%' }} alt="" />
                         </div>
                      )}
-                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50 shadow-xl" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
-                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100 transition-transform hover:scale-110">↔</div>
-                     </div>
                 </div>
             )}
           </div>
 
           <aside className="w-80 bg-white border-l flex flex-col shrink-0 shadow-[-10px_0_15px_rgba(0,0,0,0.02)]">
               <div className="p-5 border-b flex justify-between items-center bg-slate-50/50">
-                  <h3 className="font-black text-[10px] uppercase text-slate-400 tracking-widest">Notas ({commentsList.length})</h3>
+                  <h3 className="font-black text-[10px] uppercase text-slate-400 tracking-widest">Correcciones ({commentsList.length})</h3>
                   <button onClick={() => setShowResolved(!showResolved)} className="text-[10px] font-bold text-slate-400 uppercase">{showResolved ? 'Ocultar' : 'Ver todo'}</button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -154,10 +139,10 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                       <div key={c.id} className={`p-4 rounded-2xl border shadow-sm transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                           <div className="flex justify-between mb-2">
                               <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : 'text-rose-600'}`}>{i+1}</span>
-                              <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
+                              <button onClick={() => toggleResolved(c.id, c.resolved)} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
                           </div>
                           <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-rose-700'}`}>{c.content}</p>
-                          {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white transition-all shadow-sm">📥 Descargar Adjunto</a>}
+                          {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm">📥 Descargar Adjunto</a>}
                       </div>
                   ))}
               </div>
@@ -166,17 +151,16 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
 
       {tempPin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
-                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Nueva Corrección</h3>
-                <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
-                <div className="mb-6 flex flex-col items-center">
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2">Adjuntar imagen (opcional)</label>
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl text-slate-900 w-full max-w-sm border text-center">
+                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400 italic">Colaboración en tiempo real activa</h3>
+                <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí la corrección..."></textarea>
+                <div className="mb-6">
                     <input type="file" onChange={(e) => setFileToUpload(e.target.files?.[0] || null)} className="text-[10px] block w-full border rounded-xl p-2 bg-slate-50" />
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => { setTempPin(null); setFileToUpload(null); }} className="flex-1 py-4 font-black text-slate-400 text-[10px]">CANCELAR</button>
-                    <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl shadow-rose-200 transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
-                        {isSaving ? 'GUARDANDO...' : 'GUARDAR NOTA'}
+                    <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
+                        {isSaving ? 'SINCRONIZANDO...' : 'GUARDAR CORRECCIÓN'}
                     </button>
                 </div>
             </div>
