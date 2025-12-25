@@ -13,9 +13,12 @@ const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, all
   const children = allFolders.filter(f => f.parentId === folder.id);
   return (
     <div className="select-none">
-      <div className={`flex items-center gap-1 px-3 py-2 rounded-lg cursor-pointer ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`} style={{ marginLeft: `${level * 12}px` }}>
-        <button onClick={(e) => { e.preventDefault(); setIsOpen(!isOpen); }} className={`p-1 ${children.length > 0 ? '' : 'invisible'} ${isOpen ? 'rotate-90' : ''}`}>▶</button>
-        <Link to={`/folder/${folder.id}`} className="flex-1 truncate">📁 {folder.name}</Link>
+      <div className={`flex items-center gap-1 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`} style={{ marginLeft: `${level * 12}px` }}>
+        <button onClick={(e) => { e.preventDefault(); setIsOpen(!isOpen); }} className={`p-1 ${children.length > 0 ? '' : 'invisible'} ${isOpen ? 'rotate-90' : ''} transition-transform`}>▶</button>
+        <Link to={`/folder/${folder.id}`} className="flex-1 truncate flex items-center gap-2">
+            <span>{isOpen ? '📂' : '📁'}</span>
+            <span className="truncate">{folder.name}</span>
+        </Link>
       </div>
       {isOpen && children.map(child => <FolderTreeItem key={child.id} folder={child} allFolders={allFolders} level={level + 1} />)}
     </div>
@@ -54,12 +57,36 @@ const App: React.FC = () => {
   return (
     <Router>
       <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center px-6 shadow-sm font-black text-rose-600">AlcampoFlow</header>
+        {/* HEADER CON LOGOTIPO RECUPERADO */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-50 shadow-sm">
+          <Link to="/" className="flex items-center gap-2">
+             <img 
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" 
+                alt="Alcampo" 
+                className="h-6 w-auto" 
+             />
+             <div className="h-4 w-[1px] bg-slate-200 mx-2"></div>
+             <span className="text-xl font-black text-rose-600 tracking-tighter italic">Flow</span>
+          </Link>
+          <div className="flex items-center gap-4 text-slate-400">
+             <button className="hover:text-rose-600 transition-colors">🔔</button>
+             <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-500">USER</div>
+          </div>
+        </header>
+
         <div className="flex-1 overflow-hidden flex relative">
-          <aside className="w-64 bg-white border-r border-slate-200 flex flex-col p-4">
-            <Link to="/" className="mb-6 block p-3 bg-slate-100 rounded-xl font-bold text-center">🏠 Inicio</Link>
-            <div className="space-y-1">{folders.filter(f => !f.parentId).map(f => <FolderTreeItem key={f.id} folder={f} allFolders={folders} />)}</div>
+          {/* BARRA LATERAL */}
+          <aside className="w-64 bg-white border-r border-slate-200 flex flex-col p-4 shrink-0 hidden md:flex">
+            <Link to="/" className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-6 text-slate-600 hover:bg-slate-50 font-bold">
+                <span>🏠</span> Inicio
+            </Link>
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-4">Carpetas</h3>
+            <div className="space-y-1 overflow-y-auto">
+                {folders.filter(f => !f.parentId).map(f => <FolderTreeItem key={f.id} folder={f} allFolders={folders} />)}
+            </div>
           </aside>
+
+          {/* CONTENIDO PRINCIPAL */}
           <main className="flex-1 overflow-y-auto bg-slate-50">
             <Routes>
               <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} />} />
