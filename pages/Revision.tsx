@@ -7,60 +7,18 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const { projectId, versionId, pageId } = useParams();
   const navigate = useNavigate();
   const imageContainerRef = useRef<HTMLDivElement>(null);
-  const sliderRef = useRef<HTMLDivElement>(null);
   
   const [scale, setScale] = useState(1);
-  const [showResolved, setShowResolved] = useState(true);
   const [commentsList, setCommentsList] = useState<any[]>([]);
   const [isPinMode, setIsPinMode] = useState(false);
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
-  // ESTADOS DEL COMPARADOR
-  const [isCompareMode, setIsCompareMode] = useState(false);
-  const [sliderPosition, setSliderPosition] = useState(50);
-  const [compareVersionId, setCompareVersionId] = useState("");
-  const [isDraggingSlider, setIsDraggingSlider] = useState(false);
-
-  // BUSQUEDA DE DATOS BLINDADA
   const project = projects.find(p => p.id === projectId);
-  let page: any = null;
-  let currentVer: any = null;
-  let allPagesInVersion: any[] = [];
+  const page = project?.versions.find(v => v.id === versionId)?.pages.find(p => p.id === pageId);
 
-  if (project) {
-    for (const v of project.versions) {
-      const found = v.pages.find(p => p.id === pageId);
-      if (found) {
-        page = found;
-        currentVer = v;
-        allPagesInVersion = v.pages;
-        break;
-      }
-    }
-  }
-
-  // NAVEGACIÓN Y COMPARACIÓN
-  const currentIndex = allPagesInVersion.findIndex(p => p.id === pageId);
-  const prevPage = allPagesInVersion[currentIndex - 1];
-  const nextPage = allPagesInVersion[currentIndex + 1];
-  const otherVersions = project ? project.versions.filter(v => v.versionNumber !== currentVer?.versionNumber) : [];
-  
-  const compareImageUrl = compareVersionId 
-    ? project?.versions.find(v => v.id === compareVersionId)?.pages.find((p:any) => p.pageNumber === page?.pageNumber)?.imageUrl 
-    : null;
-
-  useEffect(() => {
-    if (pageId) {
-      fetchComments();
-      const channel = supabase.channel(`live-${pageId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
-        () => fetchComments())
-        .subscribe();
-      return () => { supabase.removeChannel(channel); };
-    }
-  }, [pageId]);
+  useEffect(() => { if(pageId) fetchComments(); }, [pageId]);
 
   const fetchComments = async () => {
     const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
@@ -88,90 +46,58 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
   };
 
-  if (!project || !page) return <div className="h-screen bg-white flex items-center justify-center font-bold text-slate-400">Cargando comparador...</div>;
+  if (!page) return <div className="p-10 flex items-center justify-center font-bold">Cargando...</div>;
 
   return (
-    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden"
-         onMouseMove={isDraggingSlider ? (e) => {
-            const rect = sliderRef.current?.getBoundingClientRect();
-            if (rect) setSliderPosition(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
-         } : undefined}
-         onMouseUp={() => setIsDraggingSlider(false)}
-    >
-      <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 shadow-sm z-50">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600">← VOLVER</button>
-            <h1 className="font-black text-slate-800 tracking-tight">{project.name} <span className="text-slate-300 font-medium">/ Pág {page.pageNumber}</span></h1>
-          </div>
-          <div className="flex items-center gap-4">
-             {/* BOTÓN COMPARAR RECUPERADO */}
-             {otherVersions.length > 0 && (
-                 <div className="flex items-center gap-2">
-                    {isCompareMode && (
-                        <select className="bg-white border rounded-xl px-3 py-1.5 text-[10px] font-black uppercase outline-none" onChange={(e) => setCompareVersionId(e.target.value)} value={compareVersionId}>
-                            <option value="">¿Versión?</option>
-                            {otherVersions.map(v => <option key={v.id} value={v.id}>v{v.versionNumber}</option>)}
-                        </select>
-                    )}
-                    <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-blue-600 border-blue-100'}`}>
-                        {isCompareMode ? 'Salir' : 'Comparar'}
-                    </button>
-                 </div>
-             )}
-             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
-                {isPinMode ? '📍 TOCA LA IMAGEN' : 'MARCAR CORRECCIÓN'}
-             </button>
-          </div>
+    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden">
+      <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 z-50">
+          <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors">← VOLVER</button>
+          
+          {/* BOTÓN MÁS DIRECTO */}
+          <button 
+            onClick={() => setIsPinMode(!isPinMode)} 
+            className={`px-8 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse scale-105' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
+          >
+            {isPinMode ? 'ESC PARA CANCELAR' : 'MARCAR CORRECCIÓN'}
+          </button>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          {/* FLECHAS DE NAVEGACIÓN */}
-          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
-          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
-
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
-            {!isCompareMode ? (
-                <div ref={imageContainerRef} onClick={(e) => {
+              <div 
+                ref={imageContainerRef} 
+                onClick={(e) => {
                     if(!isPinMode || !imageContainerRef.current) return;
                     const r = imageContainerRef.current.getBoundingClientRect();
                     setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
-                    setIsPinMode(false);
-                }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl border bg-white cursor-crosshair">
-                    <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
-                    {commentsList.map((c, i) => (
-                        <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
-                    ))}
-                    {tempPin && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
-                </div>
-            ) : (
-                /* MODO COMPARAR RECUPERADO */
-                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl transition-transform" style={{ transform: `scale(${scale})` }}>
-                     <img src={page.imageUrl} className="max-h-[82vh] pointer-events-none block" alt="" />
-                     {compareImageUrl && (
-                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-2 border-white" style={{ width: `${sliderPosition}%` }}>
-                             <img src={compareImageUrl} className="max-h-[82vh]" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none', height: '100%' }} alt="" />
-                        </div>
-                     )}
-                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50 shadow-xl" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
-                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100">↔</div>
-                     </div>
-                </div>
-            )}
+                    setIsPinMode(false); // Cerramos el modo pin al hacer el clic
+                }} 
+                style={{ transform: `scale(${scale})` }} 
+                className={`relative shadow-2xl border bg-white transition-all ${isPinMode ? 'cursor-crosshair ring-4 ring-rose-500/30' : 'cursor-default'}`}
+              >
+                  <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
+                  
+                  {commentsList.map((c, i) => (
+                      <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
+                  ))}
+                  
+                  {tempPin && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
+              </div>
           </div>
 
           <aside className="w-80 bg-white border-l flex flex-col shrink-0 shadow-[-10px_0_15px_rgba(0,0,0,0.02)]">
-              <div className="p-5 border-b flex justify-between items-center bg-slate-50/50">
-                  <h3 className="font-black text-[10px] uppercase text-slate-400 tracking-widest">Correcciones ({commentsList.length})</h3>
+              <div className="p-5 border-b flex justify-between items-center bg-slate-50/50 font-black text-[10px] uppercase text-slate-400">
+                  Correcciones ({commentsList.length})
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {commentsList.filter(c => showResolved || !c.resolved).map((c, i) => (
-                      <div key={c.id} className={`p-4 rounded-2xl border transition-all shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                  {commentsList.map((c, i) => (
+                      <div key={c.id} className={`p-4 rounded-2xl border shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                           <div className="flex justify-between mb-2">
                               <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : 'text-rose-600'}`}>{i+1}</span>
                               <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
                           </div>
                           <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-rose-700'}`}>{c.content}</p>
-                          {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm transition-all">📥 Descargar Referencia</a>}
+                          {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm">📥 Descargar Referencia</a>}
                       </div>
                   ))}
               </div>
@@ -180,8 +106,8 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
 
       {tempPin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl text-slate-900 w-full max-w-sm border text-center">
-                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Nueva Corrección</h3>
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
+                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Detalle de la Corrección</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
                 <div className="mb-6">
                     <input type="file" onChange={(e) => setFileToUpload(e.target.files?.[0] || null)} className="text-[10px] block w-full border rounded-xl p-2 bg-slate-50" />
@@ -189,7 +115,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                 <div className="flex gap-2">
                     <button onClick={() => { setTempPin(null); setFileToUpload(null); }} className="flex-1 py-4 font-black text-slate-400 text-[10px]">CANCELAR</button>
                     <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
-                        {isSaving ? 'SINCRONIZANDO...' : 'GUARDAR CORRECCIÓN'}
+                        {isSaving ? 'GUARDANDO...' : 'GUARDAR CORRECCIÓN'}
                     </button>
                 </div>
             </div>
