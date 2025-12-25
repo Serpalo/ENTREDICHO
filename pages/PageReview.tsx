@@ -39,6 +39,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [isDragging, setIsDragging] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   
+  // --- ESTADOS DEL COMPARADOR ---
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [previousPageUrl, setPreviousPageUrl] = useState<string | null>(null);
@@ -68,59 +69,66 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
-  // Función para cargar comentarios (reutilizable)
+  // Cargar comentarios
   const fetchComments = async () => {
     if (!pageId) return;
     const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
     if (data) {
-        // Solo actualizamos si hay cambios para evitar parpadeos
         setCommentsList(prev => {
-            if (JSON.stringify(prev) !== JSON.stringify(data)) {
-                return data;
-            }
+            if (JSON.stringify(prev) !== JSON.stringify(data)) return data;
             return prev;
         });
     }
   };
 
-  useEffect(() => {
-    if (pageId) {
-        // 1. Carga inicial
-        fetchComments();
-        
-        // 2. Resetear vista
-        setTransform({ scale: 1, x: 0, y: 0 });
-        setIsPinMode(false);
-        setTempPin(null);
-
-        // 3. PLAN B: Auto-actualización cada 3 segundos (Polling)
-        // Esto garantiza que funcione aunque falle el Realtime
-        const intervalId = setInterval(() => {
-            fetchComments();
-        }, 3000);
-
-        // 4. PLAN A: Intentar Realtime (por si acaso funciona)
-        const channel = supabase
-          .channel('any')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
-             fetchComments(); // Si llega un evento, recargamos inmediatamente
-          })
-          .subscribe();
-
-        return () => {
-            clearInterval(intervalId); // Limpiar intervalo al salir
-            supabase.removeChannel(channel);
-        };
-    } 
-    if (page) fetchPreviousVersion();
-  }, [pageId, page]);
-
+  // Cargar versión anterior para comparar
   const fetchPreviousVersion = async () => {
-    if (!page || !page.version || page.version <= 1) return;
-    const { data } = await supabase.from('pages').select('image_url').eq('project_id', projectId).eq('page_number', page.pageNumber).lt('version', page.version).order('version', { ascending: false }).limit(1).single();
+    if (!page || !page.version || page.version <= 1) {
+        setPreviousPageUrl(null);
+        return;
+    }
+    // Buscamos la misma página (mismo page_number) pero de una versión menor
+    const { data } = await supabase.from('pages')
+        .select('image_url')
+        .eq('project_id', projectId)
+        .eq('page_number', page.pageNumber)
+        .lt('version', page.version)
+        .order('version', { ascending: false })
+        .limit(1)
+        .single();
+        
     if (data) setPreviousPageUrl(data.image_url);
     else setPreviousPageUrl(null);
   };
+
+  useEffect(() => {
+    if (pageId) {
+        fetchComments();
+        setTransform({ scale: 1, x: 0, y: 0 });
+        setIsPinMode(false);
+        setTempPin(null);
+        setIsCompareMode(false); // Resetear comparador al cambiar de página
+
+        // Auto-actualización (Plan B)
+        const intervalId = setInterval(fetchComments, 3000);
+
+        // Realtime (Plan A)
+        const channel = supabase
+          .channel('any')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => fetchComments())
+          .subscribe();
+
+        return () => {
+            clearInterval(intervalId);
+            supabase.removeChannel(channel);
+        };
+    } 
+  }, [pageId]);
+
+  // Efecto separado para buscar la versión anterior cuando carga la página
+  useEffect(() => {
+      if (page) fetchPreviousVersion();
+  }, [page, projectId]);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (tempPin) return;
@@ -137,13 +145,16 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // LÓGICA DEL SLIDER DEL COMPARADOR
     if (isDraggingSlider && imageContainerRef.current) {
         const rect = imageContainerRef.current.getBoundingClientRect();
+        // Calculamos posición relativa dentro de la imagen
         const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
         const percent = (x / rect.width) * 100;
         setSliderPosition(percent);
         return;
     }
+
     if (!isDragging || isPinMode || isCompareMode) return;
     e.preventDefault();
     setTransform(prev => ({ ...prev, x: e.clientX - startPan.x, y: e.clientY - startPan.y }));
@@ -169,14 +180,10 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (attachment) {
         const fileName = `${projectId}-${Date.now()}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const { error: uploadError } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
-        if (uploadError) {
-            console.error(uploadError);
-            alert("Error al subir imagen.");
-            setIsUploadingAttachment(false);
-            return;
+        if (!uploadError) {
+            const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
+            uploadedUrl = publicUrl;
         }
-        const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
-        uploadedUrl = publicUrl;
     }
 
     const newComment = { 
@@ -194,7 +201,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     if (error) {
       alert('Error: ' + error.message);
     } else if (data) {
-      setCommentsList(prev => [data[0], ...prev]); // Actualización optimista inmediata
+      setCommentsList(prev => [data[0], ...prev]);
       setComment("");
       setAttachment(null);
       setTempPin(null);
@@ -205,19 +212,15 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const handleDeleteComment = async (id: string) => {
     if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
-    
-    setCommentsList(prev => prev.filter(c => c.id !== id)); // Optimista
+    setCommentsList(prev => prev.filter(c => c.id !== id));
     if (activePinId === id) setActivePinId(null);
-
     await supabase.from('comments').delete().eq('id', id);
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
     if (isReviewLocked) return;
     const newStatus = !currentStatus;
-    
-    setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c)); // Optimista
-    
+    setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
     await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
   };
 
@@ -266,6 +269,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 <button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-rose-500 font-bold text-xs">1:1</button>
             </div>
 
+            {/* --- BOTÓN COMPARADOR (Solo visible si hay versión previa) --- */}
             {previousPageUrl && (
                 <button onClick={() => setIsCompareMode(!isCompareMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all ${isCompareMode ? 'bg-amber-500 text-white shadow-lg ring-4 ring-amber-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
@@ -287,15 +291,19 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           <div ref={imageContainerRef} onClick={handleCanvasClick} className="relative shadow-2xl transition-transform duration-75 ease-out origin-center" style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, minWidth: '600px', width: 'auto' }}>
             <img src={page.imageUrl} alt="Actual" className="max-w-none block select-none pointer-events-none" style={{ height: 'auto', width: 'auto', maxHeight: '90vh' }} />
 
+            {/* --- VISUALIZACIÓN DEL COMPARADOR --- */}
             {isCompareMode && previousPageUrl && (
                 <>
                     <div className="absolute inset-0 overflow-hidden select-none pointer-events-none border-r-2 border-amber-400 bg-slate-900" style={{ width: `${sliderPosition}%` }}>
                         <img src={previousPageUrl} alt="Anterior" className="max-w-none block" style={{ height: '100%', width: 'auto', maxWidth: 'none' }} />
                         <div className="absolute top-4 left-4 bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl">VERSIÓN ANTERIOR</div>
                     </div>
+                    {/* Barra deslizante (Handle) */}
                     <div className="absolute inset-y-0 w-8 -ml-4 cursor-ew-resize z-50 flex items-center justify-center group" style={{ left: `${sliderPosition}%` }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingSlider(true); }}>
                         <div className="w-0.5 h-full bg-amber-400 shadow-[0_0_10px_rgba(0,0,0,0.5)]"></div>
-                        <div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute"><svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" transform="rotate(90 12 12)" /></svg></div>
+                        <div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute hover:scale-110 transition-transform">
+                            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" transform="rotate(90 12 12)" /></svg>
+                        </div>
                     </div>
                     <div className="absolute top-4 right-4 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl z-10">VERSIÓN ACTUAL</div>
                 </>
