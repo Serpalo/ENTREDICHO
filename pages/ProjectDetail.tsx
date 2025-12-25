@@ -25,58 +25,19 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
   
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [activeVersionNumber, setActiveVersionNumber] = useState<number | null>(null);
-  const [commentsCount, setCommentsCount] = useState<Record<string, number>>({});
-  
   const [isUploadingVersion, setIsUploadingVersion] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState("Preparando...");
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [deadline, setDeadline] = useState("");
 
   const project = projects.find(p => p.id === projectId);
 
   useEffect(() => {
     if (project && activeVersionNumber === null && project.versions.length > 0) {
-      const latest = Math.max(...project.versions.map(v => v.versionNumber));
-      setActiveVersionNumber(latest);
+      setActiveVersionNumber(Math.max(...project.versions.map(v => v.versionNumber)));
     }
   }, [project, activeVersionNumber]);
 
   const activeVersion = project?.versions.find(v => v.versionNumber === activeVersionNumber);
-
-  useEffect(() => {
-    if (activeVersion) fetchCommentsCount();
-  }, [activeVersion]);
-
-  const fetchCommentsCount = async () => {
-    const pageIds = activeVersion?.pages.map(p => p.id) || [];
-    if (pageIds.length === 0) { setCommentsCount({}); return; }
-    const { data } = await supabase.from('comments').select('page_id').in('page_id', pageIds).eq('resolved', false);
-    if (data) {
-      const counts: Record<string, number> = {};
-      data.forEach((c: any) => { counts[c.page_id] = (counts[c.page_id] || 0) + 1; });
-      setCommentsCount(counts);
-    }
-  };
-
-  const handleGenerateReport = async () => {
-    if (!activeVersion || !activeVersion.pages || activeVersion.pages.length === 0) return;
-    const pageIds = activeVersion.pages.map(p => p.id);
-    const { data: comments, error } = await supabase.from('comments').select('content, created_at, page_id').in('page_id', pageIds).eq('resolved', false).order('created_at', { ascending: true });
-
-    if (error || !comments || comments.length === 0) { alert("No hay correcciones pendientes para generar informe."); return; }
-
-    const reportData = comments.map(c => {
-      const pageInfo = activeVersion.pages.find(p => p.id === c.page_id);
-      return { ...c, pageNumber: pageInfo ? pageInfo.pageNumber : '?' };
-    });
-
-    const reportWindow = window.open('', '_blank');
-    if (reportWindow) {
-      const html = `<html><head><title>Informe</title><style>body{font-family:sans-serif;padding:40px;}.item{margin-bottom:15px;padding:10px;border-bottom:1px solid #eee;}.badge{font-weight:bold;margin-right:10px;}</style></head><body><h1>Informe de Errores</h1>${reportData.map(c => `<div class="item"><span class="badge">Pág ${c.pageNumber}</span> ${c.content}</div>`).join('')}<script>window.print();</script></body></html>`;
-      reportWindow.document.write(html);
-      reportWindow.document.close();
-    }
-  };
 
   const handleNewVersionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !project) return;
@@ -84,87 +45,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
     setUploadStatusText("Iniciando carga...");
 
     try {
-        if (deadline) {
-            setUploadStatusText("Actualizando fecha...");
-            const { error: deadlineError } = await supabase.from('projects').update({ review_deadline: deadline }).eq('id', project.id);
-            if (deadlineError) throw new Error("Error en fecha: " + deadlineError.message);
-        }
-
         const maxV = Math.max(...project.versions.map(v => v.versionNumber), 0);
         const nextVersionNum = maxV + 1;
         const automaticStatus = `${nextVersionNum}ª corrección`;
-
         const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            setUploadStatusText(`Subiendo página ${i + 1} de ${files.length}...`);
-            
-            const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${cleanFileName}`;
-            
+            setUploadStatusText(`Subiendo ${i + 1}/${files.length}...`);
+            const fileName = `v${nextVersionNum}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
             const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
-            if (uploadError) throw new Error("Fallo al subir imagen: " + uploadError.message);
-            
+            if (uploadError) throw uploadError;
             const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
-            
-            const { error: dbError } = await supabase.from('pages').insert([{ 
-                project_id: project.id, 
-                image_url: publicUrl, 
-                page_number: i + 1, 
-                version: nextVersionNum, 
-                status: automaticStatus 
-            }]);
-
-            if (dbError) throw new Error("Error BD: " + dbError.message);
+            await supabase.from('pages').insert([{ project_id: project.id, image_url: publicUrl, page_number: i + 1, version: nextVersionNum, status: automaticStatus }]);
         }
-        
-        setUploadStatusText("¡Listo! Recargando...");
+        setUploadStatusText("¡Listo!");
         setTimeout(() => window.location.reload(), 500);
-
-    } catch (err: any) {
-        console.error(err);
-        alert("🛑 Error durante la subida:\n" + (err.message || JSON.stringify(err)));
+    } catch (err) {
+        alert("Error subiendo");
         setIsUploadingVersion(false);
-        setUploadStatusText("Error");
     } 
   };
 
-  const handleStatusChange = async (pageId: string, newStatus: string) => {
-    const { error } = await supabase.from('pages').update({ status: newStatus }).eq('id', pageId);
-    if (!error) setProjects(prev => prev.map(p => { if (p.id !== projectId) return p; return { ...p, versions: p.versions.map(v => ({ ...v, pages: v.pages.map(pg => pg.id === pageId ? { ...pg, status: newStatus as any } : pg) })) }; }));
-  };
-
-  const handleDeletePage = async (pageId: string) => {
-    if (!window.confirm("¿Seguro?")) return;
-    const { error } = await supabase.from('pages').delete().eq('id', pageId);
-    if (!error) setProjects(prev => prev.map(p => { if (p.id !== projectId) return p; return { ...p, versions: p.versions.map(v => ({ ...v, pages: v.pages.filter(pg => pg.id !== pageId) })) }; }));
-  };
-
-  const getStatusColor = (status: string) => {
-      return STATUS_COLORS[status] || 'bg-slate-100 text-slate-600 border-slate-200';
-  };
-
-  const triggerFileInput = () => {
-      if (fileInputRef.current) {
-          fileInputRef.current.value = ''; 
-          fileInputRef.current.click();
-      }
-  };
-
-  const formatDeadline = (dateString: string | null) => {
-      if (!dateString) return <span className="text-slate-300 italic">Sin límite</span>;
-      const date = new Date(dateString);
-      const isExpired = new Date() > date;
-      return (
-          <div className="flex flex-col">
-              <span className={`text-xs font-bold ${isExpired ? 'text-red-600' : 'text-slate-600'}`}>
-                  {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-              </span>
-              {isExpired && <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Expirado</span>}
-          </div>
-      );
-  };
+  const getStatusColor = (status: string) => STATUS_COLORS[status] || 'bg-slate-100 text-slate-600 border-slate-200';
 
   if (!project) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-400">Cargando...</div>;
 
@@ -173,30 +76,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={handleNewVersionUpload} />
       
       {showUploadModal && (
-        <div 
-            style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999 }} 
-            className="flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-        >
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-                <h3 className="text-lg font-black text-slate-800 mb-2">Subir Versión {Math.max(...project.versions.map(v => v.versionNumber)) + 1}</h3>
-                <p className="text-sm text-slate-500 mb-4">Se asignará automáticamente: <span className="font-bold text-rose-600">{Math.max(...project.versions.map(v => v.versionNumber)) + 1}ª corrección</span></p>
-                
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Nueva fecha límite (Opcional)</label>
-                <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500 mb-6" />
-                
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+                <h3 className="text-lg font-black text-slate-800 mb-4">Nueva Versión</h3>
                 <div className="flex gap-3">
-                    <button onClick={() => setShowUploadModal(false)} disabled={isUploadingVersion} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200 disabled:opacity-50">Cancelar</button>
-                    <button 
-                        onClick={triggerFileInput} 
-                        disabled={isUploadingVersion}
-                        className={`flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all flex justify-center items-center gap-2 ${isUploadingVersion ? 'opacity-70 cursor-wait' : ''}`}
-                    >
-                        {isUploadingVersion ? (
-                            <>
-                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                {uploadStatusText}
-                            </>
-                        ) : 'Seleccionar Archivos'}
+                    <button onClick={() => setShowUploadModal(false)} className="flex-1 py-3 bg-slate-100 font-bold rounded-xl">Cancelar</button>
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isUploadingVersion} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg hover:bg-rose-700">
+                        {isUploadingVersion ? uploadStatusText : 'Seleccionar Archivos'}
                     </button>
                 </div>
             </div>
@@ -206,89 +92,38 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ projects, setProjects }) 
       <header className="bg-white border-b border-slate-200 px-8 py-6 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-slate-50 rounded-2xl text-slate-400"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg></button>
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">{project.name}</h1>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Historial de versiones</p>
-              </div>
+              <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-slate-50 rounded-2xl text-slate-400">🔙</button>
+              <div><h1 className="text-2xl font-black text-slate-900 tracking-tight">{project.name}</h1></div>
             </div>
-
-            <div className="flex gap-3">
-                 <button onClick={handleGenerateReport} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> Generar Informe</button>
-                 <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl bg-rose-600 hover:bg-rose-700 shadow-rose-100 transition-all">
-                    Añadir Nueva Versión
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                 </button>
-            </div>
+            <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl bg-rose-600 hover:bg-rose-700">Añadir Versión</button>
         </div>
-
-        <div className="flex items-center justify-between">
-            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                {[...project.versions].sort((a, b) => a.versionNumber - b.versionNumber).map(v => (
-                    <button key={v.id} onClick={() => setActiveVersionNumber(v.versionNumber)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-2 ${activeVersionNumber === v.versionNumber ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}>Versión {v.versionNumber}</button>
-                ))}
-            </div>
-            <div className="flex bg-slate-100 border border-slate-200 rounded-lg p-1">
-                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded transition-all ${viewMode === 'grid' ? 'bg-white text-rose-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg></button>
-                <button onClick={() => setViewMode('list')} className={`p-1.5 rounded transition-all ${viewMode === 'list' ? 'bg-white text-rose-600 shadow' : 'text-slate-400'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button>
-            </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {[...project.versions].sort((a, b) => a.versionNumber - b.versionNumber).map(v => (
+                <button key={v.id} onClick={() => setActiveVersionNumber(v.versionNumber)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 ${activeVersionNumber === v.versionNumber ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-100 text-slate-400'}`}>Versión {v.versionNumber}</button>
+            ))}
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-10">
         {activeVersion && activeVersion.pages.length > 0 ? (
-          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-             {viewMode === 'list' ? (
+             <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
                  <table className="w-full text-left border-collapse">
                       <thead className="bg-slate-50/50 border-b border-slate-100">
-                        <tr>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 w-24 text-center">Orden</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Vista Previa</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Correcciones</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Estado</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Plazo Límite</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
-                        </tr>
+                        <tr><th className="px-8 py-5 text-[10px] font-black uppercase text-slate-400">Orden</th><th className="px-8 py-5 text-[10px] font-black uppercase text-slate-400">Vista Previa</th><th className="px-8 py-5 text-[10px] font-black uppercase text-slate-400">Estado</th><th className="px-8 py-5 text-[10px] font-black uppercase text-slate-400 text-right">Acciones</th></tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {activeVersion.pages.map((page, index) => {
-                          const count = commentsCount[page.id] || 0;
-                          return (
-                            <tr key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="group hover:bg-slate-50/50 cursor-pointer transition-colors">
+                        {activeVersion.pages.map((page, index) => (
+                            <tr key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="cursor-pointer hover:bg-slate-50">
                               <td className="px-8 py-6 text-center font-black text-slate-300">#{index + 1}</td>
-                              <td className="px-8 py-6"><div className="flex items-center gap-5"><div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm"><img src={page.imageUrl} className="w-full h-full object-cover" /></div><span className="text-sm font-black text-slate-700">Página {page.pageNumber}</span></div></td>
-                              <td className="px-8 py-6 text-center">{count > 0 ? <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm shadow-rose-50"><span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>{count} PENDIENTES</div> : <span className="text-slate-200 text-[10px] font-black uppercase tracking-widest">Limpia</span>}</td>
-                              <td className="px-8 py-6" onClick={(e) => e.stopPropagation()}>
-                                <select value={page.status || '1ª corrección'} onChange={(e) => handleStatusChange(page.id, e.target.value)} className={`text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest border-2 cursor-pointer outline-none transition-all appearance-none shadow-sm ${getStatusColor(page.status || '')}`}>
-                                    {Object.keys(STATUS_COLORS).map(status => <option key={status} value={status}>{status}</option>)}
-                                    {!STATUS_COLORS[page.status || ''] && page.status && <option value={page.status}>{page.status}</option>}
-                                </select>
-                              </td>
-                              <td className="px-8 py-6">{(project as any).review_deadline ? formatDeadline((project as any).review_deadline) : <span className="text-slate-300 italic text-xs">Sin fecha</span>}</td>
-                              <td className="px-8 py-6 text-right"><button className="bg-rose-50 text-rose-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">Revisar</button><button onClick={(e) => {e.stopPropagation(); handleDeletePage(page.id)}} className="ml-2 bg-slate-50 text-slate-400 px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all">X</button></td>
+                              <td className="px-8 py-6"><div className="flex items-center gap-5"><img src={page.imageUrl} className="w-12 h-12 rounded-xl object-cover bg-slate-100" /><span className="text-sm font-black text-slate-700">Página {page.pageNumber}</span></div></td>
+                              <td className="px-8 py-6"><span className={`text-[10px] font-black px-3 py-1 rounded uppercase ${getStatusColor(page.status)}`}>{page.status}</span></td>
+                              <td className="px-8 py-6 text-right"><button className="bg-rose-50 text-rose-600 px-5 py-2 rounded-xl font-black text-[10px] uppercase hover:bg-rose-600 hover:text-white transition-all">Revisar</button></td>
                             </tr>
-                          );
-                        })}
+                        ))}
                       </tbody>
                  </table>
-             ) : (
-                 <div className="p-8 grid grid-cols-4 gap-6">
-                    {activeVersion.pages.map((page, index) => {
-                        const count = commentsCount[page.id] || 0;
-                        return (
-                            <div key={page.id} onClick={() => navigate(`/project/${project.id}/version/${activeVersion.id}/page/${page.id}`)} className="bg-white border border-slate-200 rounded-2xl p-4 cursor-pointer hover:shadow-lg transition-all relative group">
-                                {count > 0 && <div className="absolute top-2 right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-lg z-10">{count}</div>}
-                                <img src={page.imageUrl} className="w-full aspect-[3/4] object-contain bg-slate-50 rounded-xl mb-3" />
-                                <div className="flex justify-between items-center"><span className="font-bold text-sm">Página {page.pageNumber}</span><span className={`text-[9px] font-bold px-2 py-1 rounded uppercase ${getStatusColor(page.status || '')}`}>{page.status}</span></div>
-                            </div>
-                        )
-                    })}
-                 </div>
-             )}
-          </div>
-        ) : (
-          <div className="py-20 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-white"><p className="text-slate-400 font-black text-xs uppercase tracking-widest">No hay páginas en esta versión</p></div>
-        )}
+             </div>
+        ) : <div className="py-20 text-center"><p className="text-slate-400">Sin páginas</p></div>}
       </main>
     </div>
   );
