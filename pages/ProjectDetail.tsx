@@ -2,22 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabase';
 
-const ProjectDetail: React.FC<any> = ({ projects }) => {
+const ProjectDetail = ({ projects }: any) => {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   
-  // 1. OBTENEMOS LA VERSIÓN DE LA URL DE FORMA INMEDIATA
   const queryParams = new URLSearchParams(location.search);
   const versionFromUrl = queryParams.get('v');
 
   const project = projects.find((p: any) => p.id === projectId);
-  
-  // 2. ESTADO INICIAL BASADO EN LA URL O EN LA ÚLTIMA VERSIÓN
   const [activeVersionNum, setActiveVersionNum] = useState<number | null>(null);
   const [pageStats, setPageStats] = useState<Record<string, {total: number, resolved: number}>>({});
 
-  // 3. EFECTO PARA SINCRONIZAR LA VERSIÓN AL ENTRAR
   useEffect(() => {
     if (versionFromUrl) {
       setActiveVersionNum(parseInt(versionFromUrl));
@@ -43,7 +39,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
     fetchStats();
   }, [project]);
 
-  if (!project || activeVersionNum === null) return <div className="p-8 font-black text-slate-400 italic uppercase text-xs">Cargando versión...</div>;
+  if (!project || activeVersionNum === null) return <div className="p-8 font-black text-slate-400 italic uppercase text-xs">Cargando...</div>;
 
   const currentVersion = project.versions.find((v: any) => v.versionNumber === activeVersionNum);
 
@@ -69,7 +65,6 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-        {/* SELECTOR DE VERSIONES (Pestañas) */}
         <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-200 flex items-center gap-3">
           {project.versions.map((v: any) => (
             <button
