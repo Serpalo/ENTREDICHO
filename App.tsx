@@ -15,15 +15,14 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
     
-    // Suscripción a cambios en tiempo real para notificaciones
     const channel = supabase
       .channel('global-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, () => {
           addNotification({
             type: 'system',
             title: 'Nueva actividad',
             message: 'Se ha añadido un nuevo comentario.',
-            link: '#' // Podríamos mejorar esto para ir al link exacto
+            link: '#'
           });
       })
       .subscribe();
@@ -45,20 +44,13 @@ const App: React.FC = () => {
       })));
     }
 
-    // 2. Cargar Proyectos con sus Versiones y Páginas
-    // IMPORTANTE: Aquí ahora pedimos también 'review_deadline'
+    // 2. Cargar Proyectos (Incluyendo la fecha limite)
     const { data: projectsData } = await supabase
       .from('projects')
-      .select(`
-        *,
-        pages (
-          *
-        )
-      `);
+      .select(`*, pages (*)`);
 
     if (projectsData) {
       const formattedProjects: Project[] = projectsData.map(p => {
-        // Agrupar páginas por versión
         const pagesByVersion: Record<number, any[]> = {};
         
         p.pages.forEach((page: any) => {
@@ -71,7 +63,6 @@ const App: React.FC = () => {
             pageNumber: page.page_number,
             version: page.version,
             status: page.status || '1ª corrección',
-            approvals: {}, 
             comments: []
           });
         });
@@ -89,7 +80,7 @@ const App: React.FC = () => {
           parentId: p.parent_id ? p.parent_id.toString() : undefined,
           status: p.status,
           versions: versions,
-          review_deadline: p.review_deadline // <--- AQUÍ GUARDAMOS LA FECHA
+          review_deadline: p.review_deadline // <--- Aquí recuperamos la fecha
         };
       });
       
