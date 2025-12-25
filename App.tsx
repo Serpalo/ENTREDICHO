@@ -24,7 +24,6 @@ const App: React.FC = () => {
       setFolders(foldersData.map(f => ({ id: f.id.toString(), name: f.name, type: 'folder', parentId: f.parent_id?.toString() })));
     }
 
-    // VERSIÓN ESTABLE: NO PEDIMOS FECHAS
     const { data: projectsData } = await supabase.from('projects').select(`*, pages (*)`);
 
     if (projectsData) {
@@ -59,23 +58,30 @@ const App: React.FC = () => {
     }
   };
 
+  const addNotification = (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
+      setNotifications(prev => [{...notif, id: Date.now().toString(), timestamp: new Date(), read: false}, ...prev]);
+  };
+
   return (
     <Router>
       <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-50">
           <div className="flex items-center gap-2">
-             {/* INTENTAMOS CARGAR EL LOGO, SI NO, TEXTO */}
-             <img src="/logo.png" alt="AlcampoFlow" className="h-8 w-auto object-contain" onError={(e) => {e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden')}} />
+             <img src="/logo.png" alt="AlcampoFlow" className="h-8 w-auto" onError={(e) => {e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden')}} />
              <span className="hidden text-xl font-black text-rose-600 tracking-tight">Alcampo<span className="text-slate-800 font-medium">Flow</span></span>
           </div>
-          <button className="p-2 text-slate-400"><svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg></button>
+          <div className="relative">
+            <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 text-slate-400 hover:text-rose-600">🔔</button>
+            {showNotifications && <div className="absolute right-0 mt-2 w-64 bg-white shadow-xl p-4 rounded border"><p className="text-sm font-bold">Notificaciones</p>{notifications.length===0 && <p className="text-xs text-slate-400">Sin novedades</p>}</div>}
+          </div>
         </header>
+
         <div className="flex-1 overflow-hidden relative">
           <Routes>
-            <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} />} />
-            <Route path="/folder/:folderId" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} />} />
-            <Route path="/project/:projectId" element={<ProjectDetail projects={projects} setProjects={setProjects} />} />
-            <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<PageReview projects={projects} setProjects={setProjects} />} />
+            <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
+            <Route path="/folder/:folderId" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
+            <Route path="/project/:projectId" element={<ProjectDetail projects={projects} setProjects={setProjects} addNotification={addNotification} />} />
+            <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<PageReview projects={projects} setProjects={setProjects} addNotification={addNotification} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
