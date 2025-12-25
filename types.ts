@@ -14,7 +14,7 @@ export interface Page {
   imageUrl: string;
   pageNumber: number;
   version: number;
-  status: string; // Simplificado para aceptar cualquier string de la BD
+  status: string;
   comments: Comment[];
 }
 
@@ -31,7 +31,7 @@ export interface Project {
   parentId?: string;
   status: 'active' | 'completed' | 'archived';
   versions: Version[];
-  review_deadline?: string | null; // <--- ESTA ES LA CLAVE QUE FALTABA
+  review_deadline?: string | null; // <--- Esta línea es vital para que no falle
 }
 
 export interface Folder {
