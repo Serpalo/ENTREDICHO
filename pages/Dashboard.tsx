@@ -9,7 +9,6 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  // Título dinámico: Si estás en la carpeta UNICO, dirá UNICO
   const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name : "MIS PROYECTOS";
 
@@ -70,4 +69,4 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   );
 };
 
-export default Dashboard; // LA LÍNEA MÁS IMPORTANTE
+export default Dashboard;
