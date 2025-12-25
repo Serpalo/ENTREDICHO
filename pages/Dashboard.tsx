@@ -16,7 +16,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const { folderId } = useParams<{ folderId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Por defecto en cuadrícula
   const [isUploading, setIsUploading] = useState(false);
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -35,49 +35,64 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     }
   };
 
+  const handleDeleteFolder = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("⚠️ ¿BORRAR CARPETA Y SU CONTENIDO?")) return;
+    
+    const { error } = await supabase.from('folders').delete().eq('id', id);
+    if (error) {
+        alert("Error al borrar: " + error.message);
+    } else {
+        setFolders(folders.filter(f => f.id !== id));
+    }
+  };
+
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("⚠️ ¿BORRAR PROYECTO?")) return;
+
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (error) {
+        alert("Error: " + error.message);
+    } else {
+        setProjects(projects.filter(p => p.id !== id));
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
-    
-    // Alerta visual para que sepas que empieza
-    // alert("Iniciando subida..."); 
-    
     const file = e.target.files[0];
 
     try {
       const fileName = `cover-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
-      if (uploadError) throw uploadError;
+      if (uploadError) throw new Error("Fallo subida imagen");
 
       const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(fileName);
       const projectName = file.name.split('.')[0];
 
-      // --- CORRECCIÓN CLAVE AQUÍ ---
-      // Solo enviamos 'title', que es lo que la base de datos seguro tiene.
-      // Quitamos 'name' para evitar el Error 400.
       const { data: projData, error: projError } = await supabase.from('projects').insert([{
         title: projectName,
         status: '1ª corrección',
         parent_id: folderId || null
       }]).select();
 
-      if (projError) throw projError;
+      if (projError) throw new Error("Fallo base de datos");
 
       const newProject = projData[0];
       await supabase.from('pages').insert([{
         project_id: newProject.id, image_url: urlData.publicUrl, page_number: 1, version: 1, status: '1ª corrección'
       }]);
 
-      // Recarga automática
-      setTimeout(() => window.location.reload(), 1000);
+      setTimeout(() => window.location.reload(), 500);
 
     } catch (error: any) {
-      alert("Error al subir: " + error.message);
+      alert("Error: " + error.message);
       setIsUploading(false);
     }
   };
 
-  // Función auxiliar para mostrar el nombre correctamente (busca name o title)
   const getProjectName = (p: Project) => p.name || (p as any).title || "Sin nombre";
 
   return (
@@ -122,42 +137,60 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr><th className="p-4 text-xs font-black text-slate-400 uppercase">Nombre</th><th className="p-4 text-xs font-black text-slate-400 uppercase">Estado</th><th className="p-4 text-xs font-black text-slate-400 uppercase">Versiones</th><th className="p-4 text-xs font-black text-slate-400 uppercase text-right">Acción</th></tr>
+                            <tr><th className="p-4 text-xs font-black text-slate-400 uppercase">Nombre</th><th className="p-4 text-xs font-black text-slate-400 uppercase text-right">Acción</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {currentFolders.map(f => (
                                 <tr key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="hover:bg-slate-50 cursor-pointer group">
                                     <td className="p-4 flex items-center gap-3"><span className="text-2xl text-amber-400">📁</span> <span className="font-bold text-slate-700">{f.name}</span></td>
-                                    <td className="p-4 text-slate-400 text-xs">-</td>
-                                    <td className="p-4 text-slate-400 text-xs">-</td>
-                                    <td className="p-4 text-right"><span className="text-slate-300 text-xs">Abrir &rarr;</span></td>
+                                    <td className="p-4 text-right">
+                                        {/* BOTÓN ROJO SIEMPRE VISIBLE */}
+                                        <button onClick={(e) => handleDeleteFolder(f.id, e)} className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-600 hover:text-white font-bold text-xs mr-2">BORRAR</button>
+                                        <span className="text-slate-300 text-xs">Abrir &rarr;</span>
+                                    </td>
                                 </tr>
                             ))}
                             {currentProjects.map(p => (
                                 <tr key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="hover:bg-slate-50 cursor-pointer">
                                     <td className="p-4 flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center text-slate-300 font-bold">{p.versions?.[0]?.pages?.[0]?.imageUrl ? <img src={p.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : "A"}</div>
                                         <span className="font-bold text-slate-800">{getProjectName(p)}</span>
                                     </td>
-                                    <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase">{p.status}</span></td>
-                                    <td className="p-4 text-xs text-slate-500 font-bold">v{p.versions?.length || 1}</td>
-                                    <td className="p-4 text-right"><button className="text-rose-600 font-bold text-xs hover:underline">Ver</button></td>
+                                    <td className="p-4 text-right">
+                                         <button onClick={(e) => handleDeleteProject(p.id, e)} className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-600 hover:text-white font-bold text-xs mr-2">BORRAR</button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             )}
+
             {viewMode === 'grid' && (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                     {currentFolders.map(f => (
-                        <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="bg-slate-100 hover:bg-white border border-transparent hover:border-slate-200 p-6 rounded-2xl cursor-pointer transition-all hover:shadow-lg flex flex-col items-center gap-4">
+                        <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="relative group bg-slate-100 hover:bg-white border border-transparent hover:border-slate-200 p-6 rounded-2xl cursor-pointer transition-all hover:shadow-lg flex flex-col items-center gap-4">
+                            {/* BOTÓN ROJO FLOTANTE SIEMPRE VISIBLE */}
+                            <button 
+                                onClick={(e) => handleDeleteFolder(f.id, e)} 
+                                className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10"
+                                title="Borrar Carpeta"
+                            >
+                                🗑️
+                            </button>
                             <div className="text-4xl">📁</div>
                             <h3 className="font-bold text-slate-700 text-sm">{f.name}</h3>
                         </div>
                     ))}
                     {currentProjects.map(p => (
-                        <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-4 rounded-2xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1">
+                        <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="relative group bg-white p-4 rounded-2xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1">
+                            {/* BOTÓN ROJO FLOTANTE SIEMPRE VISIBLE */}
+                            <button 
+                                onClick={(e) => handleDeleteProject(p.id, e)} 
+                                className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10"
+                                title="Borrar Proyecto"
+                            >
+                                🗑️
+                            </button>
                             <div className="aspect-[3/4] bg-slate-50 rounded-xl mb-4 overflow-hidden relative flex items-center justify-center bg-slate-100 text-slate-300 font-bold text-2xl">
                                 {p.versions?.[0]?.pages?.[0]?.imageUrl ? <img src={p.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : "A"}
                             </div>
