@@ -16,7 +16,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const { folderId } = useParams<{ folderId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // ESTADO PARA RECUPERAR EL MODO LISTA
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [isUploading, setIsUploading] = useState(false);
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
@@ -39,6 +38,10 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
     setIsUploading(true);
+    
+    // Alerta visual para que sepas que empieza
+    // alert("Iniciando subida..."); 
+    
     const file = e.target.files[0];
 
     try {
@@ -49,10 +52,11 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
       const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(fileName);
       const projectName = file.name.split('.')[0];
 
-      // AHORA FUNCIONARÁ PORQUE HEMOS CREADO LA COLUMNA 'NAME' EN SQL
+      // --- CORRECCIÓN CLAVE AQUÍ ---
+      // Solo enviamos 'title', que es lo que la base de datos seguro tiene.
+      // Quitamos 'name' para evitar el Error 400.
       const { data: projData, error: projError } = await supabase.from('projects').insert([{
         title: projectName,
-        name: projectName, 
         status: '1ª corrección',
         parent_id: folderId || null
       }]).select();
@@ -64,6 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         project_id: newProject.id, image_url: urlData.publicUrl, page_number: 1, version: 1, status: '1ª corrección'
       }]);
 
+      // Recarga automática
       setTimeout(() => window.location.reload(), 1000);
 
     } catch (error: any) {
@@ -72,8 +77,11 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
     }
   };
 
+  // Función auxiliar para mostrar el nombre correctamente (busca name o title)
+  const getProjectName = (p: Project) => p.name || (p as any).title || "Sin nombre";
+
   return (
-    <div className="p-8 min-h-full bg-slate-50">
+    <div className="p-8 min-h-full bg-slate-50 font-sans">
       <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={handleFileUpload} />
       
       <div className="flex justify-between items-center mb-8">
@@ -82,14 +90,9 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
            {currentFolderName}
         </h2>
         <div className="flex gap-3">
-            {/* BOTONES PARA CAMBIAR VISTA (RECUPERADOS) */}
             <div className="bg-white border border-slate-200 p-1 rounded-xl flex gap-1">
-                <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-slate-100 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                </button>
-                <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-slate-100 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                </button>
+                <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg ${viewMode === 'grid' ? 'bg-slate-100 text-rose-600' : 'text-slate-400'}`}>⬜</button>
+                <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg ${viewMode === 'list' ? 'bg-slate-100 text-rose-600' : 'text-slate-400'}`}>≡</button>
             </div>
 
             {showNewFolderInput ? (
@@ -115,7 +118,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         </div>
       ) : (
         <>
-            {/* VISTA DE LISTA (La que te gustaba) */}
             {viewMode === 'list' && (
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                     <table className="w-full text-left">
@@ -134,20 +136,18 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                             {currentProjects.map(p => (
                                 <tr key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="hover:bg-slate-50 cursor-pointer">
                                     <td className="p-4 flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden"><img src={p.versions?.[0]?.pages?.[0]?.imageUrl} className="w-full h-full object-cover" /></div>
-                                        <span className="font-bold text-slate-800">{p.name}</span>
+                                        <div className="w-10 h-10 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center text-slate-300 font-bold">{p.versions?.[0]?.pages?.[0]?.imageUrl ? <img src={p.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : "A"}</div>
+                                        <span className="font-bold text-slate-800">{getProjectName(p)}</span>
                                     </td>
                                     <td className="p-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase">{p.status}</span></td>
                                     <td className="p-4 text-xs text-slate-500 font-bold">v{p.versions?.length || 1}</td>
-                                    <td className="p-4 text-right"><button className="text-rose-600 font-bold text-xs hover:underline">Ver Proyecto</button></td>
+                                    <td className="p-4 text-right"><button className="text-rose-600 font-bold text-xs hover:underline">Ver</button></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             )}
-
-            {/* VISTA DE CUADRÍCULA (La alternativa) */}
             {viewMode === 'grid' && (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                     {currentFolders.map(f => (
@@ -158,11 +158,10 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                     ))}
                     {currentProjects.map(p => (
                         <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-4 rounded-2xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1">
-                            <div className="aspect-[3/4] bg-slate-50 rounded-xl mb-4 overflow-hidden relative">
-                                <img src={p.versions?.[0]?.pages?.[0]?.imageUrl} className="w-full h-full object-cover" />
-                                <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded text-[10px] font-black uppercase text-slate-800 shadow-sm">{p.status}</div>
+                            <div className="aspect-[3/4] bg-slate-50 rounded-xl mb-4 overflow-hidden relative flex items-center justify-center bg-slate-100 text-slate-300 font-bold text-2xl">
+                                {p.versions?.[0]?.pages?.[0]?.imageUrl ? <img src={p.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : "A"}
                             </div>
-                            <h3 className="font-bold text-slate-800 text-sm truncate">{p.name}</h3>
+                            <h3 className="font-bold text-slate-800 text-sm truncate">{getProjectName(p)}</h3>
                         </div>
                     ))}
                 </div>
