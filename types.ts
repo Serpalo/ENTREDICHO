@@ -31,7 +31,6 @@ export interface Project {
   parentId?: string;
   status: 'active' | 'completed' | 'archived';
   versions: Version[];
-  // HE BORRADO LA FECHA PARA QUE NO FALLE
 }
 
 export interface Folder {
