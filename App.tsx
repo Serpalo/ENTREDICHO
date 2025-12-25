@@ -44,10 +44,8 @@ const App: React.FC = () => {
       })));
     }
 
-    // 2. Cargar Proyectos (Incluyendo la fecha limite)
-    const { data: projectsData } = await supabase
-      .from('projects')
-      .select(`*, pages (*)`);
+    // 2. Cargar Proyectos
+    const { data: projectsData } = await supabase.from('projects').select(`*, pages (*)`);
 
     if (projectsData) {
       const formattedProjects: Project[] = projectsData.map(p => {
@@ -80,7 +78,7 @@ const App: React.FC = () => {
           parentId: p.parent_id ? p.parent_id.toString() : undefined,
           status: p.status,
           versions: versions,
-          review_deadline: p.review_deadline // <--- Aquí recuperamos la fecha
+          review_deadline: p.review_deadline // Recuperamos la fecha
         };
       });
       
@@ -113,36 +111,14 @@ const App: React.FC = () => {
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
               {unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white"></span>}
             </button>
-            
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50">
-                <div className="p-4 border-b border-slate-50 flex justify-between items-center">
-                  <h3 className="font-bold text-sm text-slate-800">Notificaciones</h3>
-                  <button onClick={() => setNotifications([])} className="text-[10px] font-bold text-rose-600 hover:underline">Borrar todo</button>
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 text-xs font-medium">No tienes notificaciones nuevas</div>
-                  ) : (
-                    notifications.map(n => (
-                      <div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.read ? 'bg-rose-50/30' : ''}`}>
-                        <div className="flex gap-3">
-                          <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!n.read ? 'bg-rose-500' : 'bg-slate-300'}`}></div>
-                          <div>
-                            <p className="text-xs font-bold text-slate-800">{n.title}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
-                            <p className="text-[10px] text-slate-300 mt-2">{n.timestamp.toLocaleTimeString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                <div className="p-4 border-b border-slate-50 flex justify-between items-center"><h3 className="font-bold text-sm text-slate-800">Notificaciones</h3><button onClick={() => setNotifications([])} className="text-[10px] font-bold text-rose-600 hover:underline">Borrar todo</button></div>
+                <div className="max-h-64 overflow-y-auto">{notifications.length === 0 ? <div className="p-8 text-center text-slate-400 text-xs font-medium">No tienes notificaciones nuevas</div> : notifications.map(n => (<div key={n.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${!n.read ? 'bg-rose-50/30' : ''}`}><div className="flex gap-3"><div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!n.read ? 'bg-rose-500' : 'bg-slate-300'}`}></div><div><p className="text-xs font-bold text-slate-800">{n.title}</p><p className="text-xs text-slate-500 mt-0.5">{n.message}</p><p className="text-[10px] text-slate-300 mt-2">{n.timestamp.toLocaleTimeString()}</p></div></div></div>))}</div>
               </div>
             )}
           </div>
         </header>
-
         <div className="flex-1 overflow-hidden relative">
           <Routes>
             <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
