@@ -6,30 +6,57 @@ import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
 import PageReview from './pages/PageReview';
 
-// Componente pequeño para el enlace del menú lateral
-const NavItem = ({ to, label, icon, active }: { to: string, label: string, icon: string, active?: boolean }) => (
-  <Link to={to} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-1 ${active ? 'bg-rose-50 text-rose-600 font-bold shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
-    <span className="text-xl">{icon}</span>
-    <span className="text-sm">{label}</span>
-  </Link>
-);
+// --- COMPONENTE DE ÁRBOL RECURSIVO ---
+const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, allFolders: Folder[], level?: number }) => {
+  const location = useLocation();
+  const isActive = location.pathname === `/folder/${folder.id}`;
+  
+  // Buscamos hijos de esta carpeta
+  const children = allFolders.filter(f => f.parentId === folder.id);
 
-// Componente auxiliar para detectar ruta activa
+  return (
+    <>
+      <Link 
+        to={`/folder/${folder.id}`} 
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all mb-1 text-sm ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
+        style={{ marginLeft: `${level * 12}px` }} // Sangría según nivel
+      >
+        <span>{isActive ? '📂' : '📁'}</span>
+        <span className="truncate">{folder.name}</span>
+      </Link>
+      {/* Renderizamos los hijos recursivamente */}
+      {children.map(child => (
+        <FolderTreeItem key={child.id} folder={child} allFolders={allFolders} level={level + 1} />
+      ))}
+    </>
+  );
+};
+
 const SidebarContent = ({ folders }: { folders: Folder[] }) => {
   const location = useLocation();
+  // Solo mostramos las carpetas raíz (las que no tienen padre)
+  const rootFolders = folders.filter(f => !f.parentId);
+
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex flex-col h-full overflow-y-auto hidden md:flex">
-      <div className="p-6">
-        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Estructura</h3>
-        <NavItem to="/" label="Proyectos" icon="🏠" active={location.pathname === '/'} />
-        
-        <div className="mt-6">
-           <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Carpetas</h3>
-           {folders.length === 0 && <p className="text-xs text-slate-300 italic px-4">Sin carpetas</p>}
-           {folders.map(f => (
-             <NavItem key={f.id} to={`/folder/${f.id}`} label={f.name} icon="📁" active={location.pathname === `/folder/${f.id}`} />
-           ))}
+      <div className="p-4">
+        <div className="mb-6">
+            <Link to="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${location.pathname === '/' ? 'bg-rose-600 text-white font-bold shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+                <span>🏠</span>
+                <span>Inicio / Proyectos</span>
+            </Link>
         </div>
+        
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-4">Carpetas</h3>
+        {folders.length === 0 ? (
+            <p className="text-xs text-slate-300 italic px-4">Sin carpetas</p>
+        ) : (
+            <div className="space-y-0.5">
+                {rootFolders.map(f => (
+                    <FolderTreeItem key={f.id} folder={f} allFolders={folders} />
+                ))}
+            </div>
+        )}
       </div>
     </aside>
   );
@@ -48,20 +75,16 @@ const App: React.FC = () => {
   }, []);
 
   const fetchData = async () => {
-    // Cargar carpetas
     const { data: foldersData } = await supabase.from('folders').select('*');
     if (foldersData) {
       setFolders(foldersData.map(f => ({ id: f.id.toString(), name: f.name, type: 'folder', parentId: f.parent_id?.toString() })));
     }
 
-    // Cargar proyectos (Versión segura sin 'name' si falla)
     const { data: projectsData } = await supabase.from('projects').select(`*, pages (*)`);
-
     if (projectsData) {
       const formattedProjects: Project[] = projectsData.map(p => {
         const pagesByVersion: Record<number, any[]> = {};
         const rawPages = p.pages || [];
-        
         rawPages.forEach((page: any) => {
           if (!pagesByVersion[page.version]) pagesByVersion[page.version] = [];
           pagesByVersion[page.version].push({
@@ -76,7 +99,6 @@ const App: React.FC = () => {
 
         return {
           id: p.id.toString(),
-          // IMPORTANTE: Aquí aseguramos que siempre tenga un nombre
           name: p.name || p.title || "Sin nombre",
           type: 'project',
           parentId: p.parent_id?.toString(),
@@ -99,7 +121,6 @@ const App: React.FC = () => {
   return (
     <Router>
       <div className="flex flex-col h-screen bg-slate-50 text-slate-900 font-sans">
-        {/* HEADER */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-50 relative shadow-sm">
           <div className="flex items-center gap-2">
              <img src="/logo.png" alt="AlcampoFlow" className="h-8 w-auto" onError={(e) => {e.currentTarget.style.display='none'; e.currentTarget.nextElementSibling?.classList.remove('hidden')}} />
@@ -122,11 +143,8 @@ const App: React.FC = () => {
             )}
           </div>
         </header>
-
-        {/* CONTENIDO PRINCIPAL CON SIDEBAR */}
         <div className="flex-1 overflow-hidden flex relative">
           <SidebarContent folders={folders} />
-          
           <main className="flex-1 overflow-y-auto bg-slate-50 relative">
             <Routes>
               <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
