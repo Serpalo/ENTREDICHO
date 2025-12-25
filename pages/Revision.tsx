@@ -7,6 +7,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const { projectId, versionId, pageId } = useParams();
   const navigate = useNavigate();
   const imageContainerRef = useRef<HTMLDivElement>(null);
+  const sliderRef = useRef<HTMLDivElement>(null);
   
   const [scale, setScale] = useState(1);
   const [showResolved, setShowResolved] = useState(true);
@@ -16,10 +17,14 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
-  // --- LÓGICA DE BÚSQUEDA ROBUSTA PARA EVITAR PANTALLA EN BLANCO ---
+  // ESTADOS DEL COMPARADOR
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [sliderPosition, setSliderPosition] = useState(50);
+  const [compareVersionId, setCompareVersionId] = useState("");
+  const [isDraggingSlider, setIsDraggingSlider] = useState(false);
+
+  // BUSQUEDA DE DATOS BLINDADA
   const project = projects.find(p => p.id === projectId);
-  
-  // Buscamos la página recorriendo todas las versiones si es necesario
   let page: any = null;
   let currentVer: any = null;
   let allPagesInVersion: any[] = [];
@@ -36,16 +41,20 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     }
   }
 
+  // NAVEGACIÓN Y COMPARACIÓN
   const currentIndex = allPagesInVersion.findIndex(p => p.id === pageId);
   const prevPage = allPagesInVersion[currentIndex - 1];
   const nextPage = allPagesInVersion[currentIndex + 1];
   const otherVersions = project ? project.versions.filter(v => v.versionNumber !== currentVer?.versionNumber) : [];
+  
+  const compareImageUrl = compareVersionId 
+    ? project?.versions.find(v => v.id === compareVersionId)?.pages.find((p:any) => p.pageNumber === page?.pageNumber)?.imageUrl 
+    : null;
 
   useEffect(() => {
     if (pageId) {
       fetchComments();
-      // Suscripción en tiempo real para colaboración
-      const channel = supabase.channel(`room-${pageId}`)
+      const channel = supabase.channel(`live-${pageId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
         () => fetchComments())
         .subscribe();
@@ -79,28 +88,36 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
   };
 
-  const toggleResolved = async (id: string, currentStatus: boolean) => {
-    await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', id);
-    fetchComments();
-  };
-
-  if (!project || !page) {
-    return (
-      <div className="h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600"></div>
-        <p className="font-black text-slate-400 uppercase text-xs tracking-widest">Sincronizando datos...</p>
-      </div>
-    );
-  }
+  if (!project || !page) return <div className="h-screen bg-white flex items-center justify-center font-bold text-slate-400">Cargando comparador...</div>;
 
   return (
-    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden">
+    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden"
+         onMouseMove={isDraggingSlider ? (e) => {
+            const rect = sliderRef.current?.getBoundingClientRect();
+            if (rect) setSliderPosition(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
+         } : undefined}
+         onMouseUp={() => setIsDraggingSlider(false)}
+    >
       <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 shadow-sm z-50">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors">← VOLVER</button>
+            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600">← VOLVER</button>
             <h1 className="font-black text-slate-800 tracking-tight">{project.name} <span className="text-slate-300 font-medium">/ Pág {page.pageNumber}</span></h1>
           </div>
           <div className="flex items-center gap-4">
+             {/* BOTÓN COMPARAR RECUPERADO */}
+             {otherVersions.length > 0 && (
+                 <div className="flex items-center gap-2">
+                    {isCompareMode && (
+                        <select className="bg-white border rounded-xl px-3 py-1.5 text-[10px] font-black uppercase outline-none" onChange={(e) => setCompareVersionId(e.target.value)} value={compareVersionId}>
+                            <option value="">¿Versión?</option>
+                            {otherVersions.map(v => <option key={v.id} value={v.id}>v{v.versionNumber}</option>)}
+                        </select>
+                    )}
+                    <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-4 py-2 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-blue-600 border-blue-100'}`}>
+                        {isCompareMode ? 'Salir' : 'Comparar'}
+                    </button>
+                 </div>
+             )}
              <button onClick={() => setIsPinMode(!isPinMode)} className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
                 {isPinMode ? '📍 TOCA LA IMAGEN' : 'MARCAR CORRECCIÓN'}
              </button>
@@ -108,22 +125,38 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
+          {/* FLECHAS DE NAVEGACIÓN */}
           {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
           {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
 
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
-              <div ref={imageContainerRef} onClick={(e) => {
-                  if(!isPinMode || !imageContainerRef.current) return;
-                  const r = imageContainerRef.current.getBoundingClientRect();
-                  setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
-                  setIsPinMode(false);
-              }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl border bg-white cursor-crosshair transition-transform duration-150">
-                  <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
-                  {commentsList.map((c, i) => (
-                      <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
-                  ))}
-                  {tempPin && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
-              </div>
+            {!isCompareMode ? (
+                <div ref={imageContainerRef} onClick={(e) => {
+                    if(!isPinMode || !imageContainerRef.current) return;
+                    const r = imageContainerRef.current.getBoundingClientRect();
+                    setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
+                    setIsPinMode(false);
+                }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl border bg-white cursor-crosshair">
+                    <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
+                    {commentsList.map((c, i) => (
+                        <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
+                    ))}
+                    {tempPin && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
+                </div>
+            ) : (
+                /* MODO COMPARAR RECUPERADO */
+                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl transition-transform" style={{ transform: `scale(${scale})` }}>
+                     <img src={page.imageUrl} className="max-h-[82vh] pointer-events-none block" alt="" />
+                     {compareImageUrl && (
+                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-2 border-white" style={{ width: `${sliderPosition}%` }}>
+                             <img src={compareImageUrl} className="max-h-[82vh]" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none', height: '100%' }} alt="" />
+                        </div>
+                     )}
+                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50 shadow-xl" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
+                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100">↔</div>
+                     </div>
+                </div>
+            )}
           </div>
 
           <aside className="w-80 bg-white border-l flex flex-col shrink-0 shadow-[-10px_0_15px_rgba(0,0,0,0.02)]">
@@ -135,7 +168,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                       <div key={c.id} className={`p-4 rounded-2xl border transition-all shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                           <div className="flex justify-between mb-2">
                               <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : 'text-rose-600'}`}>{i+1}</span>
-                              <button onClick={() => toggleResolved(c.id, c.resolved)} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
+                              <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
                           </div>
                           <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-rose-700'}`}>{c.content}</p>
                           {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm transition-all">📥 Descargar Referencia</a>}
