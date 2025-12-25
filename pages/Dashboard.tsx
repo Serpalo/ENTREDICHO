@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 
-export default function Dashboard({ projects, folders, setFolders, onRefresh }: any) {
+export default function Dashboard({ projects, folders, onRefresh }: any) {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -15,25 +15,26 @@ export default function Dashboard({ projects, folders, setFolders, onRefresh }: 
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return setShowNewFolder(false);
-    const { data, error } = await supabase.from('folders').insert([{ name: newFolderName, parent_id: folderId || null }]).select();
-    if (!error && data) {
-      onRefresh();
+    const { error } = await supabase.from('folders').insert([{ name: newFolderName, parent_id: folderId || null }]);
+    if (!error) {
       setNewFolderName("");
       setShowNewFolder(false);
+      onRefresh();
     }
   };
 
   const handleDeleteFolder = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (window.confirm("¿Eliminar esta carpeta y todo su contenido?")) {
+    e.stopPropagation(); // Evita que al borrar se abra la carpeta
+    if (window.confirm("¿Eliminar esta carpeta?")) {
       await supabase.from('folders').delete().eq('id', id);
       onRefresh();
     }
   };
 
   const handleDeleteProject = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (window.confirm("¿Eliminar este proyecto permanentemente?")) {
+    e.stopPropagation(); // Evita que al borrar se abra el proyecto
+    if (window.confirm("¿Eliminar este proyecto?")) {
+      await supabase.from('pages').delete().eq('project_id', id);
       await supabase.from('projects').delete().eq('id', id);
       onRefresh();
     }
@@ -59,12 +60,10 @@ export default function Dashboard({ projects, folders, setFolders, onRefresh }: 
       }} />
 
       <div className="flex justify-between items-center mb-10">
-        <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">Mis Proyectos</h2>
+        <h2 className="text-3xl font-black text-slate-800 uppercase italic">Mis Proyectos</h2>
         <div className="flex gap-3">
-          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-white border shadow-sm rounded-2xl font-black text-[10px] uppercase">+ Carpeta</button>
-          <button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200">
-            {isUploading ? 'Subiendo...' : 'Subir Folleto'}
-          </button>
+          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-white border shadow-sm rounded-2xl font-black text-[10px] uppercase hover:bg-slate-50">+ Carpeta</button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200">{isUploading ? 'Subiendo...' : 'Subir Folleto'}</button>
         </div>
       </div>
 
@@ -76,19 +75,31 @@ export default function Dashboard({ projects, folders, setFolders, onRefresh }: 
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+        {/* CARPETAS CON BOTÓN DE BORRAR */}
         {currentFolders.map((f: any) => (
           <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group bg-white p-8 rounded-[2rem] border cursor-pointer hover:shadow-xl transition-all flex flex-col items-center gap-2 relative">
-            <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 p-2 text-slate-300 hover:text-rose-600 transition-all">🗑️</button>
-            <span className="text-4xl">📁</span>
+            <button 
+              onClick={(e) => handleDeleteFolder(e, f.id)}
+              className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-600 hover:text-white font-bold"
+            >
+              ✕
+            </button>
+            <span className="text-5xl">📁</span>
             <span className="font-black text-[10px] uppercase text-slate-600">{f.name}</span>
           </div>
         ))}
 
+        {/* PROYECTOS CON BOTÓN DE BORRAR */}
         {currentProjects.map((p: any) => {
           const latest = p.versions[p.versions.length - 1];
           return (
             <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="group bg-white p-4 rounded-[2rem] border hover:shadow-2xl cursor-pointer transition-all flex flex-col relative">
-              <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-6 right-6 z-10 opacity-0 group-hover:opacity-100 p-2 bg-white/80 backdrop-blur rounded-full text-xs hover:text-rose-600 transition-all shadow-sm">🗑️</button>
+              <button 
+                onClick={(e) => handleDeleteProject(e, p.id)}
+                className="absolute top-6 right-6 z-20 bg-rose-600 text-white w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg font-bold"
+              >
+                ✕
+              </button>
               <div className="aspect-[3/4] rounded-[1.5rem] overflow-hidden mb-4 border bg-slate-50 relative">
                 <img src={latest?.pages[0]?.imageUrl} className="w-full h-full object-cover" alt="" />
                 <div className="absolute bottom-3 right-3 bg-slate-900 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase">V{latest?.versionNumber}</div>
