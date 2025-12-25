@@ -59,11 +59,11 @@ const Dashboard: React.FC<any> = ({ projects, folders, setFolders }) => {
         ))}
 
         {currentProjects.map((p: any) => (
-          /* MAPEAMOS CADA VERSIÓN PARA QUE SEA UNA CARPETA/TARJETA DIFERENTE */
           p.versions.map((v: any) => (
             <div 
               key={`${p.id}-${v.versionNumber}`} 
-              onClick={() => navigate(`/project/${p.id}/version/${v.id}/page/${v.pages[0].id}`)}
+              /* CORRECCIÓN: Ahora navega a la lista general del proyecto */
+              onClick={() => navigate(`/project/${p.id}`)}
               className="group bg-white p-5 rounded-[2.5rem] border-2 border-slate-100 hover:shadow-2xl cursor-pointer transition-all hover:-translate-y-2 hover:border-rose-100"
             >
               <div className="aspect-[3/4] bg-slate-50 rounded-[2rem] mb-6 overflow-hidden border border-slate-50 shadow-inner relative">
@@ -72,7 +72,6 @@ const Dashboard: React.FC<any> = ({ projects, folders, setFolders }) => {
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px] uppercase italic">Sin previa</div>
                 )}
-                {/* ETIQUETA FLOTANTE DE VERSIÓN */}
                 <div className="absolute top-4 right-4 bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">
                   V{v.versionNumber}
                 </div>
