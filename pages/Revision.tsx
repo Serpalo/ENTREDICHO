@@ -15,13 +15,20 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
+  // Lógica de búsqueda robusta para evitar errores de carga
   const project = projects.find(p => p.id === projectId);
-  const page = project?.versions.find(v => v.id === versionId)?.pages.find(p => p.id === pageId);
+  let page: any = null;
+  if (project) {
+    for (const v of project.versions) {
+      const found = v.pages.find(p => p.id === pageId);
+      if (found) { page = found; break; }
+    }
+  }
 
   useEffect(() => { if(pageId) fetchComments(); }, [pageId]);
 
   const fetchComments = async () => {
-    const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('comments').select('*').eq('page_id', pageId).order('created_at', { ascending: true });
     if (data) setCommentsList(data);
   };
 
@@ -46,19 +53,26 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
   };
 
-  if (!page) return <div className="p-10 flex items-center justify-center font-bold">Cargando...</div>;
+  // NUEVA FUNCIÓN: BORRAR NOTA
+  const deleteComment = async (id: string) => {
+    if (!window.confirm("¿Estás seguro de que quieres borrar esta nota?")) return;
+    const { error } = await supabase.from('comments').delete().eq('id', id);
+    if (error) alert("Error al borrar");
+    else fetchComments();
+  };
+
+  if (!page) return <div className="h-screen flex items-center justify-center font-black text-slate-400 animate-pulse">CARGANDO...</div>;
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden">
       <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 z-50">
-          <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors">← VOLVER</button>
-          
-          {/* BOTÓN MÁS DIRECTO */}
+          <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors uppercase text-[10px] tracking-widest">← Volver</button>
+          <h1 className="font-black text-slate-800 text-sm tracking-tight hidden md:block">REVISIÓN: {project?.name} / Pág {page.pageNumber}</h1>
           <button 
             onClick={() => setIsPinMode(!isPinMode)} 
-            className={`px-8 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse scale-105' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
+            className={`px-8 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
           >
-            {isPinMode ? 'ESC PARA CANCELAR' : 'MARCAR CORRECCIÓN'}
+            {isPinMode ? 'CANCELAR' : 'MARCAR CORRECCIÓN'}
           </button>
       </header>
 
@@ -70,34 +84,37 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                     if(!isPinMode || !imageContainerRef.current) return;
                     const r = imageContainerRef.current.getBoundingClientRect();
                     setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
-                    setIsPinMode(false); // Cerramos el modo pin al hacer el clic
+                    setIsPinMode(false);
                 }} 
                 style={{ transform: `scale(${scale})` }} 
                 className={`relative shadow-2xl border bg-white transition-all ${isPinMode ? 'cursor-crosshair ring-4 ring-rose-500/30' : 'cursor-default'}`}
               >
                   <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
-                  
                   {commentsList.map((c, i) => (
                       <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
                   ))}
-                  
                   {tempPin && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
               </div>
           </div>
 
           <aside className="w-80 bg-white border-l flex flex-col shrink-0 shadow-[-10px_0_15px_rgba(0,0,0,0.02)]">
-              <div className="p-5 border-b flex justify-between items-center bg-slate-50/50 font-black text-[10px] uppercase text-slate-400">
+              <div className="p-5 border-b font-black text-[10px] uppercase text-slate-400 tracking-widest bg-slate-50/50">
                   Correcciones ({commentsList.length})
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {commentsList.map((c, i) => (
-                      <div key={c.id} className={`p-4 rounded-2xl border shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
-                          <div className="flex justify-between mb-2">
-                              <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : 'text-rose-600'}`}>{i+1}</span>
-                              <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center shadow-sm font-bold">{c.resolved ? '✓' : '○'}</button>
+                      <div key={c.id} className={`p-4 rounded-2xl border transition-all shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-slate-100 hover:border-rose-200'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'}`}>{i+1}</span>
+                              <div className="flex gap-1">
+                                  {/* BOTÓN RESOLVER */}
+                                  <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-slate-50 border flex items-center justify-center shadow-sm text-xs transition-colors hover:bg-emerald-500 hover:text-white">{c.resolved ? '✓' : '○'}</button>
+                                  {/* BOTÓN BORRAR NOTA */}
+                                  <button onClick={() => deleteComment(c.id)} className="w-8 h-8 rounded-xl bg-slate-50 border flex items-center justify-center shadow-sm text-xs text-slate-400 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all">✕</button>
+                              </div>
                           </div>
-                          <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-rose-700'}`}>{c.content}</p>
-                          {c.image_url && <a href={c.image_url} target="_blank" download className="mt-3 block w-full py-2 bg-white/50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm">📥 Descargar Referencia</a>}
+                          <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-slate-700'}`}>{c.content}</p>
+                          {c.image_url && <a href={c.image_url} target="_blank" rel="noreferrer" className="mt-3 block w-full py-2 bg-slate-50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm">📥 Referencia</a>}
                       </div>
                   ))}
               </div>
@@ -107,7 +124,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       {tempPin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
-                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Detalle de la Corrección</h3>
+                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Nueva Nota</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
                 <div className="mb-6">
                     <input type="file" onChange={(e) => setFileToUpload(e.target.files?.[0] || null)} className="text-[10px] block w-full border rounded-xl p-2 bg-slate-50" />
@@ -115,7 +132,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                 <div className="flex gap-2">
                     <button onClick={() => { setTempPin(null); setFileToUpload(null); }} className="flex-1 py-4 font-black text-slate-400 text-[10px]">CANCELAR</button>
                     <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
-                        {isSaving ? 'GUARDANDO...' : 'GUARDAR CORRECCIÓN'}
+                        {isSaving ? 'GUARDANDO...' : 'GUARDAR NOTA'}
                     </button>
                 </div>
             </div>
