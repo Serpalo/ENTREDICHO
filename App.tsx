@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
-// CORRECCIÓN AQUÍ: Usamos un solo punto (.) porque están en la misma carpeta
 import { supabase } from './supabase';
 import { Project, Folder, AppNotification } from './types';
 import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
-import PageReview from './pages/PageReview';
+// CAMBIO IMPORTANTE: Importamos el nuevo archivo "Revision" en lugar del viejo "PageReview"
+import Revision from './pages/Revision';
 
 // --- COMPONENTE DE ÁRBOL DESPLEGABLE ---
 const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, allFolders: Folder[], level?: number }) => {
@@ -75,7 +75,6 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -144,7 +143,10 @@ const App: React.FC = () => {
               <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
               <Route path="/folder/:folderId" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} addNotification={addNotification} />} />
               <Route path="/project/:projectId" element={<ProjectDetail projects={projects} setProjects={setProjects} addNotification={addNotification} />} />
-              <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<PageReview projects={projects} setProjects={setProjects} addNotification={addNotification} />} />
+              
+              {/* CAMBIO IMPORTANTÍSIMO: Usamos <Revision> en vez de <PageReview> */}
+              <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<Revision projects={projects} setProjects={setProjects} />} />
+              
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
