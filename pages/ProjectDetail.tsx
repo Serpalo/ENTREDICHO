@@ -35,7 +35,6 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
     ? project.versions.find((v: any) => v.versionNumber === activeVersionNum) 
     : sortedVersions[0];
 
-  // Lógica para el nombre de la corrección según el número de versión
   const getCorrectionName = (num: number) => {
     if (num === 1) return "1ª CORRECCIÓN";
     if (num === 2) return "2ª CORRECCIÓN";
@@ -113,7 +112,11 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
               return (
                 <tr key={page.id} className="group hover:bg-slate-50/80 transition-all">
                   <td className="px-8 py-5">
-                    <div className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm">
+                    {/* AHORA LA IMAGEN TIENE EL CURSOR DE MANO Y TE LLEVA A LA PÁGINA */}
+                    <div 
+                      onClick={() => navigate(`/project/${project.id}/version/${currentVersion.id}/page/${page.id}`)}
+                      className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:border-rose-400 hover:scale-105 transition-all duration-300"
+                    >
                       <img src={page.imageUrl} className="w-full h-full object-cover" alt="" />
                     </div>
                   </td>
