@@ -28,10 +28,10 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
-  // --- NUEVO: ESTADOS PARA EL COMPARADOR ---
+  // ESTADOS COMPARADOR
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [compareVersionId, setCompareVersionId] = useState<string>("");
-  const [sliderPosition, setSliderPosition] = useState(50); // % de la pantalla
+  const [sliderPosition, setSliderPosition] = useState(50);
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
   const project = projects.find(p => p.id === projectId);
@@ -46,7 +46,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
-  // Encontrar la imagen de la versión anterior para comparar
+  // Comprobar si hay historial para mostrar el botón de comparar
+  const hasHistory = project && project.versions.length > 1;
+
   const getCompareImage = () => {
       if (!project || !compareVersionId) return null;
       const otherVersion = project.versions.find(v => v.id === compareVersionId);
@@ -73,20 +75,16 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   };
 
-  // --- LÓGICA DEL SLIDER ---
   const handleSliderMove = (e: React.MouseEvent | React.TouchEvent) => {
       if (!isDraggingSlider || !sliderRef.current) return;
-      
       const rect = sliderRef.current.getBoundingClientRect();
       let clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-      
       const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-      const percentage = (x / rect.width) * 100;
-      setSliderPosition(percentage);
+      setSliderPosition((x / rect.width) * 100);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isCompareMode) return; // En modo comparar no ponemos pines
+    if (isCompareMode) return;
     if (!isPinMode || !imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -97,25 +95,13 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const handleSavePin = async () => {
     if (!comment || !pageId) return;
-    
-    let attachmentUrl = null;
-    if (attachedFile) {
-        const fileName = `attach-${Date.now()}-${attachedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        await supabase.storage.from('brochures').upload(fileName, attachedFile);
-        const { data } = supabase.storage.from('brochures').getPublicUrl(fileName);
-        attachmentUrl = data.publicUrl;
-    }
-
     const { data } = await supabase.from('comments').insert([
-        { content: comment, page_id: pageId, x: tempPin?.x || 50, y: tempPin?.y || 50, resolved: false } 
-        //, attachment_url: attachmentUrl 
+        { content: comment, page_id: pageId, x: tempPin?.x || 50, y: tempPin?.y || 50, resolved: false }
     ]).select();
 
     if (data) {
         setCommentsList(prev => [data[0], ...prev]);
-        setComment("");
-        setTempPin(null);
-        setAttachedFile(null);
+        setComment(""); setTempPin(null); setAttachedFile(null);
     }
   };
 
@@ -126,7 +112,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   };
 
-  if (!project || !version || !page) return <div className="p-10 text-center">Cargando...</div>;
+  if (!project || !version || !page) return <div className="p-10 text-center text-white">Cargando...</div>;
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden" 
@@ -139,52 +125,51 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
       <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 z-50 shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white flex items-center gap-1">← Volver</button>
-            <h1 className="font-bold truncate max-w-xs text-sm md:text-base">{project.name} <span className="text-slate-500 font-normal">/ Pág {page.pageNumber}</span></h1>
+            <h1 className="font-bold truncate max-w-xs text-sm md:text-base hidden md:block">{project.name} <span className="text-slate-500 font-normal">/ Pág {page.pageNumber}</span></h1>
           </div>
           
-          {/* CONTROLES CENTRALES (Zoom + Comparador) */}
-          <div className="flex items-center gap-4">
-             {/* BOTÓN MODO COMPARAR */}
-             <button 
-                onClick={() => { setIsCompareMode(!isCompareMode); setIsPinMode(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-sm font-bold ${isCompareMode ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}
-             >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                {isCompareMode ? 'Salir de Comparar' : 'Comparar'}
-             </button>
-
-             {/* Si estamos comparando, mostrar selector de versión */}
-             {isCompareMode && (
-                 <select 
-                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs"
-                    onChange={(e) => setCompareVersionId(e.target.value)}
-                    value={compareVersionId}
-                 >
-                     <option value="">Selecciona versión...</option>
-                     {project.versions.filter(v => v.id !== versionId).map(v => (
-                         <option key={v.id} value={v.id}>Versión {v.versionNumber}</option>
-                     ))}
-                 </select>
-             )}
-
-             {!isCompareMode && (
-                <div className="flex items-center gap-2 bg-slate-700 p-1 rounded-lg">
-                    <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))} className="p-1 hover:bg-slate-600 rounded">➖</button>
-                    <span className="text-xs font-mono w-8 text-center">{Math.round(scale * 100)}%</span>
-                    <button onClick={() => setScale(s => Math.min(s + 0.2, 4))} className="p-1 hover:bg-slate-600 rounded">➕</button>
-                </div>
-             )}
+          {/* ZOOM SIEMPRE VISIBLE */}
+          <div className="flex items-center gap-2 bg-slate-700 p-1 rounded-lg absolute left-1/2 -translate-x-1/2">
+                <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))} className="p-1 px-2 hover:bg-slate-600 rounded">➖</button>
+                <span className="text-xs font-mono w-10 text-center">{Math.round(scale * 100)}%</span>
+                <button onClick={() => setScale(s => Math.min(s + 0.2, 4))} className="p-1 px-2 hover:bg-slate-600 rounded">➕</button>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+             {/* 1. BOTÓN COMPARAR (SOLO SI HAY HISTORIAL) */}
+             {hasHistory && (
+                 <div className="flex items-center gap-2">
+                     {isCompareMode && (
+                        <select 
+                            className="bg-slate-900 border border-slate-500 rounded px-2 py-1 text-xs outline-none"
+                            onChange={(e) => setCompareVersionId(e.target.value)}
+                            value={compareVersionId}
+                        >
+                            <option value="">Elegir versión...</option>
+                            {project.versions.filter(v => v.id !== versionId).map(v => (
+                                <option key={v.id} value={v.id}>Versión {v.versionNumber}</option>
+                            ))}
+                        </select>
+                     )}
+                     <button 
+                        onClick={() => { setIsCompareMode(!isCompareMode); setIsPinMode(false); }}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-sm transition-all ${isCompareMode ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'}`}
+                     >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                        {isCompareMode ? 'Salir' : 'Comparar'}
+                     </button>
+                 </div>
+             )}
+
+             {/* 2. BOTONES NORMALES (PINES) */}
              {!isCompareMode && (
                  <>
-                    <div className="flex gap-1 mr-2">
+                    <div className="flex gap-1">
                         {['bg-rose-600', 'bg-amber-500', 'bg-emerald-500', 'bg-blue-500'].map(color => (
                             <button key={color} onClick={() => setActiveColor(color)} className={`w-5 h-5 rounded-full ${color} ${activeColor === color ? 'ring-2 ring-white' : 'opacity-50 hover:opacity-100'}`} />
                         ))}
                     </div>
-                    <button onClick={() => setIsPinMode(!isPinMode)} className={`px-3 py-1.5 rounded font-bold text-xs transition-all ${isPinMode ? 'bg-white text-slate-900 animate-pulse' : 'bg-rose-600 text-white'}`}>
+                    <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${isPinMode ? 'bg-white text-slate-900' : 'bg-rose-600 text-white'}`}>
                         {isPinMode ? '📍 Clic en imagen' : 'Añadir Nota'}
                     </button>
                  </>
@@ -192,13 +177,11 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
           </div>
       </header>
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* ÁREA DE TRABAJO */}
       <div className="flex flex-1 overflow-hidden">
-          
-          {/* ÁREA DE IMAGEN */}
           <div className="flex-1 overflow-hidden relative flex items-center justify-center bg-slate-950/50" onWheel={handleWheel}>
             
-            {/* MODO NORMAL (PINES) */}
+            {/* VISTA NORMAL */}
             {!isCompareMode && (
                 <div 
                     ref={imageContainerRef} 
@@ -207,108 +190,64 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                     style={{ transform: `scale(${scale})`, cursor: isPinMode ? 'crosshair' : 'grab' }}
                 >
                     <img src={page.imageUrl} alt="Page" className="max-h-[85vh] object-contain select-none" />
-                    
                     {commentsList.filter(c => showResolved || !c.resolved).map((c, i) => (
-                        <div key={c.id} className="group absolute w-8 h-8 -ml-4 -mt-4 cursor-pointer z-10 hover:z-50" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
-                            <div className={`w-full h-full rounded-full border-2 border-white shadow-md flex items-center justify-center text-xs font-bold transition-colors ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'}`}>
-                                {i + 1}
-                            </div>
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 bg-white text-slate-900 p-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-xs z-20">
-                                <p className="line-clamp-2">{c.content}</p>
-                            </div>
+                        <div key={c.id} className="group absolute w-8 h-8 -ml-4 -mt-4 cursor-pointer z-10" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
+                            <div className={`w-full h-full rounded-full border-2 border-white shadow-md flex items-center justify-center text-xs font-bold ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'}`}>{i + 1}</div>
                         </div>
                     ))}
-                    {tempPin && <div className="absolute w-8 h-8 bg-yellow-400 rounded-full animate-bounce border-2 border-white -ml-4 -mt-4 z-20 shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
+                    {tempPin && <div className="absolute w-8 h-8 bg-yellow-400 rounded-full animate-bounce border-2 border-white -ml-4 -mt-4 z-20" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
                 </div>
             )}
 
-            {/* MODO COMPARACIÓN (SLIDER) */}
+            {/* VISTA COMPARAR */}
             {isCompareMode && (
-                <div 
-                    ref={sliderRef}
-                    className="relative max-h-[85vh] select-none shadow-2xl"
-                    style={{ transform: `scale(${scale})` }}
-                >
-                     {/* IMAGEN DE FONDO (Versión ACTUAL) */}
-                     <img src={page.imageUrl} alt="Current" className="max-h-[85vh] object-contain pointer-events-none" />
-
-                     {/* IMAGEN SUPERPUESTA (Versión ANTERIOR) - CLIPEADA */}
+                <div ref={sliderRef} className="relative max-h-[85vh] select-none shadow-2xl" style={{ transform: `scale(${scale})` }}>
+                     <img src={page.imageUrl} className="max-h-[85vh] object-contain pointer-events-none" />
                      {compareImageUrl ? (
-                        <div 
-                            className="absolute top-0 left-0 h-full w-full overflow-hidden border-r-2 border-white bg-slate-900"
-                            style={{ width: `${sliderPosition}%` }}
-                        >
-                             <img src={compareImageUrl} alt="Old" className="max-h-[85vh] object-contain" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none' }} />
-                             
-                             {/* ETIQUETA 'ANTES' */}
-                             <div className="absolute top-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded font-bold">ANTES (v{project.versions.find(v=>v.id===compareVersionId)?.versionNumber})</div>
+                        <div className="absolute top-0 left-0 h-full w-full overflow-hidden border-r-2 border-white bg-slate-900" style={{ width: `${sliderPosition}%` }}>
+                             <img src={compareImageUrl} className="max-h-[85vh] object-contain" style={{ width: sliderRef.current?.offsetWidth, maxWidth: 'none' }} />
+                             <div className="absolute top-4 left-4 bg-black/70 text-white text-xs px-2 py-1 rounded font-bold">ANTES</div>
                         </div>
                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white font-bold">Selecciona una versión antigua arriba ⬆</div>
-                     )}
-
-                     {/* MANILLAR DEL SLIDER */}
-                     {compareImageUrl && (
-                        <div 
-                            className="absolute top-0 bottom-0 w-8 -ml-4 cursor-ew-resize z-20 flex items-center justify-center group"
-                            style={{ left: `${sliderPosition}%` }}
-                            onMouseDown={() => setIsDraggingSlider(true)}
-                            onTouchStart={() => setIsDraggingSlider(true)}
-                        >
-                            <div className="w-1 h-full bg-white shadow-lg group-hover:bg-amber-400 transition-colors"></div>
-                            <div className="w-8 h-8 bg-white rounded-full absolute shadow-xl flex items-center justify-center text-slate-900 font-bold text-xs group-hover:scale-110 transition-transform">
-                                ↔
-                            </div>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white font-bold p-4 rounded text-center">
+                            ⬇ Selecciona una versión antigua arriba para comparar ⬇
                         </div>
                      )}
-                     
-                     {/* ETIQUETA 'DESPUÉS' (Fija a la derecha) */}
-                     <div className="absolute top-4 right-4 bg-rose-600/90 text-white text-xs px-2 py-1 rounded font-bold shadow-sm">AHORA (v{version.versionNumber})</div>
+                     {compareImageUrl && (
+                        <div className="absolute top-0 bottom-0 w-8 -ml-4 cursor-ew-resize z-20 flex items-center justify-center" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)} onTouchStart={() => setIsDraggingSlider(true)}>
+                            <div className="w-1 h-full bg-white shadow-lg"></div>
+                            <div className="w-8 h-8 bg-white rounded-full absolute shadow-xl flex items-center justify-center text-slate-900 font-bold text-xs">↔</div>
+                        </div>
+                     )}
                 </div>
             )}
           </div>
 
-          {/* BARRA LATERAL (Solo visible en modo normal o si quieres ver comentarios mientras comparas) */}
+          {/* BARRA LATERAL DERECHA (Siempre visible para ver contexto) */}
           <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
                  <h3 className="font-bold text-slate-200">Comentarios ({commentsList.length})</h3>
-                 <button onClick={() => setShowResolved(!showResolved)} className={`text-xs px-2 py-1 rounded border ${showResolved ? 'bg-slate-700 text-white border-slate-600' : 'text-slate-400 border-slate-700'}`}>
-                     {showResolved ? '👁️ Ver todo' : '🙈 Ocultar resueltos'}
-                 </button>
+                 <button onClick={() => setShowResolved(!showResolved)} className="text-xs px-2 py-1 rounded border border-slate-700 text-slate-400">{showResolved ? 'Ver todo' : 'Ocultar resueltos'}</button>
              </div>
-             
              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                 {commentsList.length === 0 && <p className="text-slate-500 text-center text-sm italic mt-10">No hay comentarios aún.</p>}
                  {commentsList.filter(c => showResolved || !c.resolved).map((c, i) => (
-                     <div key={c.id} className={`p-3 rounded-xl border transition-all group ${c.resolved ? 'bg-emerald-900/20 border-emerald-900/50' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}>
+                     <div key={c.id} className={`p-3 rounded-xl border transition-all ${c.resolved ? 'bg-emerald-900/20 border-emerald-900/50' : 'bg-slate-800 border-slate-700'}`}>
                          <div className="flex justify-between items-start mb-2">
-                             <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold ${c.resolved ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'}`}>{i + 1}</span>
-                             <button onClick={() => toggleResolved(c.id, c.resolved)} className={`w-6 h-6 rounded-full border flex items-center justify-center transition-all ${c.resolved ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-500 text-transparent hover:border-emerald-500 hover:text-emerald-500/50'}`}>✓</button>
+                             <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'}`}>{i + 1}</span>
+                             <button onClick={() => toggleResolved(c.id, c.resolved)} className="text-slate-500 hover:text-emerald-500 text-lg leading-none">✓</button>
                          </div>
-                         <p className={`text-sm ${c.resolved ? 'text-emerald-200 line-through opacity-70' : 'text-slate-200'}`}>{c.content}</p>
+                         <p className={`text-sm ${c.resolved ? 'text-emerald-200 line-through' : 'text-slate-200'}`}>{c.content}</p>
                      </div>
                  ))}
              </div>
           </div>
       </div>
 
-      {/* MODAL COMENTARIO */}
       {tempPin && (
-            <div className="absolute top-20 right-96 w-80 bg-white text-slate-900 p-5 rounded-2xl shadow-2xl z-50 border border-slate-200 animate-fade-in-up">
-                <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold text-lg">Nueva Nota</h3>
-                    <button onClick={() => setTempPin(null)} className="text-slate-400 hover:text-slate-600">✕</button>
-                </div>
-                <textarea autoFocus className="w-full border border-slate-200 bg-slate-50 p-3 rounded-xl mb-3 h-24 focus:ring-2 focus:ring-rose-500 outline-none resize-none text-sm" placeholder="Corrección..." value={comment} onChange={e => setComment(e.target.value)} />
-                <div className="flex items-center gap-2 mb-4">
-                    <button onClick={() => fileInputRef.current?.click()} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded flex items-center gap-1 border border-slate-200">📎 {attachedFile ? 'Cambiar' : 'Adjuntar'}</button>
-                    {attachedFile && <span className="text-xs text-emerald-600 truncate max-w-[120px]">{attachedFile.name}</span>}
-                    <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={(e) => e.target.files && setAttachedFile(e.target.files[0])} />
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setTempPin(null)} className="flex-1 py-2 bg-slate-100 font-bold rounded-lg hover:bg-slate-200 text-sm">Cancelar</button>
-                    <button onClick={handleSavePin} className="flex-1 py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 shadow-lg shadow-rose-200 text-sm">Guardar</button>
-                </div>
+            <div className="absolute top-20 right-96 w-80 bg-white text-slate-900 p-5 rounded-2xl shadow-2xl z-50 border border-slate-200">
+                <h3 className="font-bold text-lg mb-3">Nueva Nota</h3>
+                <textarea autoFocus className="w-full border p-3 rounded-xl mb-3 h-24 bg-slate-50 text-sm" placeholder="Corrección..." value={comment} onChange={e => setComment(e.target.value)} />
+                <button onClick={handleSavePin} className="w-full py-2 bg-rose-600 text-white font-bold rounded-lg hover:bg-rose-700 text-sm">Guardar</button>
             </div>
       )}
     </div>
