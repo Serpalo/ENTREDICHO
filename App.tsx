@@ -13,10 +13,7 @@ const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, all
   const children = allFolders.filter(f => f.parentId === folder.id);
   return (
     <div className="select-none">
-      <div 
-        className={`flex items-center gap-1 px-3 py-2 rounded-lg cursor-pointer ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
-        style={{ marginLeft: `${level * 12}px` }}
-      >
+      <div className={`flex items-center gap-1 px-3 py-2 rounded-lg cursor-pointer ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`} style={{ marginLeft: `${level * 12}px` }}>
         <button onClick={(e) => { e.preventDefault(); setIsOpen(!isOpen); }} className={`p-1 ${children.length > 0 ? '' : 'invisible'} ${isOpen ? 'rotate-90' : ''}`}>▶</button>
         <Link to={`/folder/${folder.id}`} className="flex-1 truncate">📁 {folder.name}</Link>
       </div>
@@ -38,7 +35,6 @@ const App: React.FC = () => {
   const fetchData = async () => {
     const { data: f } = await supabase.from('folders').select('*');
     if (f) setFolders(f.map(x => ({ id: x.id.toString(), name: x.name, type: 'folder', parentId: x.parent_id?.toString() })));
-
     const { data: p } = await supabase.from('projects').select(`*, pages (*)`);
     if (p) {
       setProjects(p.map(x => {
@@ -61,7 +57,7 @@ const App: React.FC = () => {
         <header className="h-16 bg-white border-b border-slate-200 flex items-center px-6 shadow-sm font-black text-rose-600">AlcampoFlow</header>
         <div className="flex-1 overflow-hidden flex relative">
           <aside className="w-64 bg-white border-r border-slate-200 flex flex-col p-4">
-            <Link to="/" className="mb-6 block p-3 bg-slate-100 rounded-xl font-bold">🏠 Inicio</Link>
+            <Link to="/" className="mb-6 block p-3 bg-slate-100 rounded-xl font-bold text-center">🏠 Inicio</Link>
             <div className="space-y-1">{folders.filter(f => !f.parentId).map(f => <FolderTreeItem key={f.id} folder={f} allFolders={folders} />)}</div>
           </aside>
           <main className="flex-1 overflow-y-auto bg-slate-50">
@@ -69,7 +65,7 @@ const App: React.FC = () => {
               <Route path="/" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} />} />
               <Route path="/folder/:folderId" element={<Dashboard projects={projects} setProjects={setProjects} folders={folders} setFolders={setFolders} />} />
               <Route path="/project/:projectId" element={<ProjectDetail projects={projects} setProjects={setProjects} />} />
-              <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<Revision projects={projects} setProjects={setProjects} />} />
+              <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<Revision projects={projects} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
