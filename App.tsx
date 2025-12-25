@@ -9,21 +9,33 @@ export default function App() {
   const [projects, setProjects] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
 
+  // Función para obtener todos los datos de Supabase
   const fetchData = async () => {
     const { data: pData } = await supabase.from('projects').select('*');
     const { data: fData } = await supabase.from('folders').select('*');
     const { data: pgData } = await supabase.from('pages').select('*').order('page_number', { ascending: true });
 
     if (pData && pgData) {
+      // Agrupamos versiones para evitar duplicados en el Dashboard
       const formattedProjects = pData.map(proj => {
         const projPages = pgData.filter(pg => pg.project_id === proj.id);
         const versionsMap: any = {};
+        
         projPages.forEach(pg => {
           if (!versionsMap[pg.version]) {
-            versionsMap[pg.version] = { id: `${proj.id}-v${pg.version}`, versionNumber: pg.version, pages: [] };
+            versionsMap[pg.version] = { 
+              id: `${proj.id}-v${pg.version}`, 
+              versionNumber: pg.version, 
+              pages: [] 
+            };
           }
-          versionsMap[pg.version].pages.push({ id: pg.id, pageNumber: pg.page_number, imageUrl: pg.image_url });
+          versionsMap[pg.version].pages.push({ 
+            id: pg.id, 
+            pageNumber: pg.page_number, 
+            imageUrl: pg.image_url 
+          });
         });
+
         return {
           id: proj.id,
           name: proj.title || proj.name,
@@ -33,17 +45,27 @@ export default function App() {
       });
       setProjects(formattedProjects);
     }
-    if (fData) setFolders(fData.map(f => ({ id: f.id, name: f.name, parentId: f.parent_id })));
+
+    if (fData) {
+      setFolders(fData.map(f => ({ 
+        id: f.id, 
+        name: f.name, 
+        parentId: f.parent_id 
+      })));
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   return (
     <Routes>
-      <Route path="/" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
-      <Route path="/folder/:folderId" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
-      <Route path="/project/:projectId" element={<ProjectDetail projects={projects} />} />
-      <Route path="/project/:projectId/version/:versionId/page/:pageId" element={<Revision projects={projects} />} />
-    </Routes>
-  );
-}
+      {/* RUTA RAÍZ: Muestra "MIS PROYECTOS" */}
+      <Route 
+        path="/" 
+        element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} 
+      />
+      
+      {/* RUTA DE CARPETA: Esencial para que el título cambie a "UNICO" */}
+      <Route
