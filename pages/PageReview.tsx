@@ -18,7 +18,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   
   // HERRAMIENTAS
   const [scale, setScale] = useState(1);
-  const [activeColor, setActiveColor] = useState("bg-rose-600");
   const [showResolved, setShowResolved] = useState(true);
   
   // ESTADOS DE COMENTARIOS
@@ -46,7 +45,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
     }
   }
 
-  // Comprobar si hay historial para mostrar el botón de comparar
+  // Comprobar si hay historial (Más de 1 versión)
   const hasHistory = project && project.versions.length > 1;
 
   const getCompareImage = () => {
@@ -135,44 +134,45 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                 <button onClick={() => setScale(s => Math.min(s + 0.2, 4))} className="p-1 px-2 hover:bg-slate-600 rounded">➕</button>
           </div>
 
-          <div className="flex items-center gap-4">
-             {/* 1. BOTÓN COMPARAR (SOLO SI HAY HISTORIAL) */}
-             {hasHistory && (
-                 <div className="flex items-center gap-2">
-                     {isCompareMode && (
-                        <select 
-                            className="bg-slate-900 border border-slate-500 rounded px-2 py-1 text-xs outline-none"
-                            onChange={(e) => setCompareVersionId(e.target.value)}
-                            value={compareVersionId}
-                        >
-                            <option value="">Elegir versión...</option>
-                            {project.versions.filter(v => v.id !== versionId).map(v => (
-                                <option key={v.id} value={v.id}>Versión {v.versionNumber}</option>
-                            ))}
-                        </select>
-                     )}
-                     <button 
-                        onClick={() => { setIsCompareMode(!isCompareMode); setIsPinMode(false); }}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-sm transition-all ${isCompareMode ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500'}`}
-                     >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                        {isCompareMode ? 'Salir' : 'Comparar'}
-                     </button>
-                 </div>
+          {/* HERRAMIENTAS DERECHA: COMPARAR Y AÑADIR NOTA */}
+          <div className="flex items-center gap-3">
+             
+             {/* 1. SELECTOR DE VERSIÓN (Solo visible si estamos comparando) */}
+             {isCompareMode && (
+                <select 
+                    className="bg-slate-900 border border-indigo-500 rounded px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                    onChange={(e) => setCompareVersionId(e.target.value)}
+                    value={compareVersionId}
+                >
+                    <option value="">Elegir versión...</option>
+                    {project.versions.filter(v => v.id !== versionId).map(v => (
+                        <option key={v.id} value={v.id}>Versión {v.versionNumber}</option>
+                    ))}
+                </select>
              )}
 
-             {/* 2. BOTONES NORMALES (PINES) */}
+             {/* 2. BOTÓN COMPARAR (SIEMPRE VISIBLE, PERO DESACTIVADO SI NO HAY HISTORIAL) */}
+             <button 
+                disabled={!hasHistory}
+                onClick={() => { setIsCompareMode(!isCompareMode); setIsPinMode(false); }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-bold text-sm transition-all
+                    ${!hasHistory 
+                        ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' // Estilo Desactivado
+                        : isCompareMode 
+                            ? 'bg-indigo-600 border-indigo-500 text-white' // Estilo Activo
+                            : 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500' // Estilo Normal
+                    }`}
+                title={!hasHistory ? "Sube otra versión para comparar" : "Comparar versiones"}
+             >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                {isCompareMode ? 'Salir' : 'Comparar'}
+             </button>
+
+             {/* 3. BOTÓN AÑADIR NOTA */}
              {!isCompareMode && (
-                 <>
-                    <div className="flex gap-1">
-                        {['bg-rose-600', 'bg-amber-500', 'bg-emerald-500', 'bg-blue-500'].map(color => (
-                            <button key={color} onClick={() => setActiveColor(color)} className={`w-5 h-5 rounded-full ${color} ${activeColor === color ? 'ring-2 ring-white' : 'opacity-50 hover:opacity-100'}`} />
-                        ))}
-                    </div>
-                    <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${isPinMode ? 'bg-white text-slate-900' : 'bg-rose-600 text-white'}`}>
-                        {isPinMode ? '📍 Clic en imagen' : 'Añadir Nota'}
-                    </button>
-                 </>
+                 <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all border border-transparent ${isPinMode ? 'bg-white text-slate-900 animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
+                    {isPinMode ? '📍 Clic en imagen' : 'Añadir Nota'}
+                 </button>
              )}
           </div>
       </header>
@@ -223,7 +223,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
             )}
           </div>
 
-          {/* BARRA LATERAL DERECHA (Siempre visible para ver contexto) */}
+          {/* BARRA LATERAL DERECHA */}
           <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
              <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
                  <h3 className="font-bold text-slate-200">Comentarios ({commentsList.length})</h3>
