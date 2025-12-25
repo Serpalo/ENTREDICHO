@@ -46,7 +46,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const project = projects.find(p => p.id === projectId);
   
-  // LOGICA DE BLOQUEO REFORZADA
+  // BLOQUEO DE SEGURIDAD
   const deadlineString = (project as any)?.review_deadline;
   const isReviewLocked = deadlineString ? new Date() > new Date(deadlineString) : false;
 
@@ -154,7 +154,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // AQUÍ ESTÁ LA CLAVE: Si está bloqueado, NO permitimos poner el pin
+    // BLOQUEO DE CLIC SI HA EXPIRADO EL PLAZO
     if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
     
     const rect = imageContainerRef.current.getBoundingClientRect();
@@ -165,7 +165,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleSavePin = async () => {
-    if (isReviewLocked) { alert("El plazo ha expirado."); return; } // Bloqueo extra
+    if (isReviewLocked) { alert("El plazo ha expirado."); return; }
     if (!comment.trim() || !pageId) return;
     setIsUploadingAttachment(true);
 
@@ -203,7 +203,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleDeleteComment = async (id: string) => {
-    if (isReviewLocked) return; // Bloqueo de borrado
+    if (isReviewLocked) return;
     if (!window.confirm("¿Borrar corrección?")) return;
     setCommentsList(prev => prev.filter(c => c.id !== id));
     if (activePinId === id) setActivePinId(null);
@@ -211,7 +211,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const handleToggleResolve = async (id: string, currentStatus: boolean) => {
-    if (isReviewLocked) return; // Bloqueo de checkbox
+    if (isReviewLocked) return;
     const newStatus = !currentStatus;
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
     await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
@@ -361,4 +361,24 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
                                     <div className="flex-1 min-w-0">
                                         <p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p>
                                     </div>
-                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4
+                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                </a>
+                            </div>
+                        )}
+
+                        <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
+                      </div>
+                      {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+export default PageReview;
