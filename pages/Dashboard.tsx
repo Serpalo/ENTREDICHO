@@ -6,93 +6,56 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [showNewFolder, setShowNewFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-
-  // TÍTULO DINÁMICO ULTRA-COMPROBADO
-  const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
   
-  // Si estamos en una carpeta, forzamos que aparezca su nombre o su ID
-  const pageTitle = folderId 
-    ? (currentFolder ? currentFolder.name.toUpperCase() : `CARPETA: ${folderId}`) 
-    : "MIS PROYECTOS";
-
-  const uniqueIds = new Set();
-  const currentProjects = projects.filter((p: any) => {
-    const isCorrectFolder = folderId ? String(p.parentId) === String(folderId) : !p.parentId;
-    if (isCorrectFolder && !uniqueIds.has(p.id)) {
-      uniqueIds.add(p.id);
-      return true;
-    }
-    return false;
-  });
-
-  const currentFolders = folders.filter((f: any) => 
-    folderId ? String(f.parentId) === String(folderId) : !f.parentId
-  );
+  // TÍTULO DINÁMICO: Buscamos el nombre de la carpeta por ID
+  const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
+  const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
   const handleDelete = async (e: any, table: string, id: string) => {
     e.stopPropagation();
-    const confirmacion = window.confirm("¿BORRAR PERMANENTEMENTE?");
-    if (confirmacion) {
+    if (window.confirm("¿BORRAR?")) {
       if (table === 'projects') await supabase.from('pages').delete().eq('project_id', id);
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) alert("ERROR SUPABASE: " + error.message);
+      await supabase.from(table).delete().eq('id', id);
       onRefresh();
     }
   };
 
   return (
-    <div className="p-10 bg-slate-50 min-h-screen font-sans">
-      <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-xl border-b-4 border-rose-500">
-        <h1 className="text-4xl font-black text-slate-800 italic tracking-tighter">
+    <div className="p-10 bg-slate-900 min-h-screen font-sans"> {/* FONDO OSCURO PARA TESTEAR */}
+      <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] border-b-8 border-rose-600">
+        <h1 className="text-4xl font-black text-slate-900 italic tracking-tighter uppercase">
             {pageTitle}
         </h1>
         <div className="flex gap-4">
-          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-slate-100 rounded-2xl font-black text-[10px] uppercase border-2 border-slate-200">+ CARPETA</button>
-          <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200">SUBIR FOLLETO</button>
+          <button onClick={() => navigate('/')} className="px-4 py-2 bg-slate-200 rounded-xl font-bold text-[10px]">INICIO</button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-8 py-4 bg-rose-600 text-white rounded-2xl font-black text-[12px] shadow-xl">SUBIR</button>
         </div>
       </div>
 
-      {/* RENDER DE CARPETAS CON BOTÓN SIEMPRE VISIBLE */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-        {currentFolders.map((f: any) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+        {/* CARPETAS */}
+        {folders.filter((f: any) => folderId ? String(f.parentId) === String(folderId) : !f.parentId).map((f: any) => (
           <div key={f.id} className="relative group">
-            <div onClick={() => navigate(`/folder/${f.id}`)} className="bg-white p-10 rounded-[2.5rem] border-2 border-slate-100 cursor-pointer shadow-sm hover:shadow-2xl transition-all flex flex-col items-center">
-              <span className="text-6xl mb-4">📁</span>
-              <span className="font-black text-[10px] uppercase text-slate-500">{f.name}</span>
+            <div onClick={() => navigate(`/folder/${f.id}`)} className="bg-white p-10 rounded-[2.5rem] cursor-pointer flex flex-col items-center">
+              <span className="text-6xl mb-2">📁</span>
+              <span className="font-black text-[10px] uppercase text-slate-800">{f.name}</span>
             </div>
-            <button 
-              onClick={(e) => handleDelete(e, 'folders', f.id)}
-              className="absolute -top-2 -right-2 bg-rose-600 text-white w-10 h-10 rounded-full shadow-2xl font-bold z-50 flex items-center justify-center border-4 border-white"
-            >
-              ✕
-            </button>
+            <button onClick={(e) => handleDelete(e, 'folders', f.id)} className="absolute -top-2 -right-2 bg-rose-600 text-white w-10 h-10 rounded-full border-4 border-white font-bold z-50">✕</button>
           </div>
         ))}
 
-        {/* RENDER DE PROYECTOS */}
-        {currentProjects.map((p: any) => {
-          const latest = p.versions?.[p.versions.length - 1];
-          return (
-            <div key={p.id} className="relative">
-              <div onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-5 rounded-[2.5rem] border-2 border-slate-100 cursor-pointer shadow-sm flex flex-col h-full hover:shadow-2xl transition-all">
-                <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-100 border relative">
-                  {latest?.pages?.[0]?.imageUrl && <img src={latest.pages[0].imageUrl} className="w-full h-full object-cover" />}
-                  <div className="absolute top-3 right-3 bg-black text-white px-3 py-1 rounded-lg text-[9px] font-black">V{latest?.versionNumber || 1}</div>
-                </div>
-                <h3 className="font-black text-xs truncate uppercase px-2 text-slate-800">{p.name}</h3>
+        {/* PROYECTOS */}
+        {projects.filter((p: any) => folderId ? String(p.parentId) === String(folderId) : !p.parentId).map((p: any) => (
+          <div key={p.id} className="relative">
+            <div onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-4 rounded-[2.5rem] cursor-pointer flex flex-col h-full">
+              <div className="aspect-[3/4] rounded-[1.5rem] overflow-hidden mb-4 bg-slate-100 relative">
+                <img src={p.versions?.[p.versions.length-1]?.pages?.[0]?.imageUrl} className="w-full h-full object-cover" />
               </div>
-              <button 
-                onClick={(e) => handleDelete(e, 'projects', p.id)}
-                className="absolute -top-2 -right-2 bg-rose-600 text-white w-10 h-10 rounded-full shadow-2xl font-bold z-50 flex items-center justify-center border-4 border-white"
-              >
-                ✕
-              </button>
+              <h3 className="font-black text-xs uppercase text-slate-800">{p.name}</h3>
             </div>
-          );
-        })}
+            <button onClick={(e) => handleDelete(e, 'projects', p.id)} className="absolute -top-2 -right-2 bg-rose-600 text-white w-10 h-10 rounded-full border-4 border-white font-bold z-50">✕</button>
+          </div>
+        ))}
       </div>
     </div>
   );
