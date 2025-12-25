@@ -1,81 +1,53 @@
-
-export enum CorrectionStatus {
-  FIRST = "1ª CORRECCIÓN",
-  SECOND = "2ª CORRECCIÓN",
-  THIRD = "3ª CORRECCIÓN",
-  PRINT = "IMPRENTA"
-}
-
-export type ReviewerRole = "Publicidad" | "Dirección de producto";
-export type CommentStatus = "pending" | "in-progress" | "resolved";
-
 export interface Comment {
   id: string;
-  author: string;
-  role: ReviewerRole;
-  text: string;
-  timestamp: Date;
+  content: string;
+  created_at: string; // Coincide con la DB
+  page_id: string;
   x: number;
   y: number;
-  status: CommentStatus;
+  resolved: boolean;
+  attachment_url?: string | null;
 }
 
-export interface ReviewerApproval {
-  role: ReviewerRole;
-  approved: boolean;
-  pending: boolean;
-}
-
-export interface BrochurePage {
+export interface Page {
   id: string;
-  pageNumber: number;
   imageUrl: string;
-  annotationsLayer?: string; // Capa de dibujo en formato Data URL (PNG transparente)
-  status: CorrectionStatus;
-  approvals: Record<ReviewerRole, ReviewerApproval>;
+  pageNumber: number;
+  version: number;
+  status: '1ª corrección' | '2ª corrección' | '3ª corrección' | '4ª corrección' | '5ª corrección' | 'Imprenta';
   comments: Comment[];
-  generalNotes?: string;
+  // approvals eliminados para simplificar, usamos status
 }
 
-export interface BrochureVersion {
+export interface Version {
   id: string;
   versionNumber: number;
-  createdAt: Date;
-  pages: BrochurePage[];
-  isActive: boolean;
-}
-
-export interface Folder {
-  id: string;
-  name: string;
-  parentId: string | null;
-  type: 'folder';
-}
-
-export interface CorrectionPeriod {
-  startDateTime: string; // ISO string including time
-  endDateTime: string;   // ISO string including time
+  pages: Page[];
 }
 
 export interface Project {
   id: string;
   name: string;
-  parentId: string | null;
   type: 'project';
-  versions: BrochureVersion[];
-  advertisingEmails?: string[];
-  productDirectionEmails?: string[];
-  correctionPeriod?: CorrectionPeriod;
+  parentId?: string; // Para carpetas
+  status: 'active' | 'completed' | 'archived';
+  versions: Version[];
+  review_deadline?: string | null; // <--- ¡AQUÍ ESTÁ LA CLAVE! 📅
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  type: 'folder';
+  parentId?: string;
 }
 
 export interface AppNotification {
   id: string;
-  type: 'comment' | 'approval' | 'system';
+  type: 'system' | 'user';
   title: string;
   message: string;
   timestamp: Date;
   read: boolean;
   link?: string;
 }
-
-export type FileSystemItem = Folder | Project;
