@@ -46,7 +46,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
 
   const project = projects.find(p => p.id === projectId);
   
-  // BLOQUEO DE SEGURIDAD
   const deadlineString = (project as any)?.review_deadline;
   const isReviewLocked = deadlineString ? new Date() > new Date(deadlineString) : false;
 
@@ -144,7 +143,6 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         setSliderPosition(percent);
         return;
     }
-
     if (!isDragging || isPinMode || isCompareMode) return;
     e.preventDefault();
     setTransform(prev => ({ ...prev, x: e.clientX - startPan.x, y: e.clientY - startPan.y }));
@@ -154,9 +152,7 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // BLOQUEO DE CLIC SI HA EXPIRADO EL PLAZO
     if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
-    
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
