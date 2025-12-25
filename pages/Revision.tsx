@@ -18,31 +18,23 @@ const Revision: React.FC<PageReviewProps> = ({ projects }) => {
   const [isPinMode, setIsPinMode] = useState(false);
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
 
-  // COMPARADOR
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
-  // BUSQUEDA DIRECTA DE DATOS
+  // BUSQUEDA BLINDADA
   const project = projects.find(p => p.id === projectId);
-  
-  // Buscamos la página en cualquier versión del proyecto para que no falle
   let page: any = null;
-  let currentVersion: any = null;
 
   if (project) {
     project.versions.forEach(v => {
       const found = v.pages.find(p => p.id === pageId);
-      if (found) {
-        page = found;
-        currentVersion = v;
-      }
+      if (found) page = found;
     });
   }
 
   const hasHistory = project && project.versions.length > 1;
-
   const compareImageUrl = compareVersionId 
     ? project?.versions.find(v => v.id === compareVersionId)?.pages.find((p:any) => p.pageNumber === page?.pageNumber)?.imageUrl 
     : null;
@@ -70,9 +62,7 @@ const Revision: React.FC<PageReviewProps> = ({ projects }) => {
     setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentStatus } : c));
   };
 
-  // Si después de buscar no hay página, mostramos error específico para saber qué falta
-  if (!project) return <div className="p-10 text-white bg-slate-900 h-screen flex items-center justify-center">Error: No se encuentra el Proyecto (ID: {projectId})</div>;
-  if (!page) return <div className="p-10 text-white bg-slate-900 h-screen flex items-center justify-center">Error: No se encuentra la Página (ID: {pageId})</div>;
+  if (!project || !page) return <div className="p-10 text-white bg-slate-900 h-screen flex items-center justify-center font-bold">Cargando datos... (Si persiste, recarga la página)</div>;
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-white overflow-hidden"
@@ -87,34 +77,30 @@ const Revision: React.FC<PageReviewProps> = ({ projects }) => {
             <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-white">← Volver</button>
             <h1 className="font-bold">{project.name} / Pág {page.pageNumber}</h1>
           </div>
-          
           <div className="flex items-center gap-4">
              {hasHistory && (
-                 <button 
-                    onClick={() => setIsCompareMode(!isCompareMode)}
-                    className={`px-4 py-2 rounded-lg font-bold text-sm border ${isCompareMode ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}
-                 >
-                    {isCompareMode ? 'Salir' : 'Comparar'}
-                 </button>
+                 <div className="flex items-center gap-2">
+                    {isCompareMode && (
+                        <select className="bg-slate-900 border border-blue-500 rounded px-2 py-1 text-xs" onChange={(e) => setCompareVersionId(e.target.value)} value={compareVersionId}>
+                            <option value="">Comparar con...</option>
+                            {project.versions.filter(v => v.id !== versionId).map(v => <option key={v.id} value={v.id}>v{v.versionNumber}</option>)}
+                        </select>
+                    )}
+                    <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-4 py-2 rounded-lg font-bold text-sm border ${isCompareMode ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>{isCompareMode ? 'Salir' : 'Comparar'}</button>
+                 </div>
              )}
-
-             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm ${isPinMode ? 'bg-white text-slate-900' : 'bg-rose-600 text-white'}`}>
-                {isPinMode ? '📍 Haz clic en la imagen' : 'Añadir Nota'}
-             </button>
+             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-4 py-2 rounded-lg font-bold text-sm ${isPinMode ? 'bg-white text-slate-900' : 'bg-rose-600 text-white'}`}>{isPinMode ? '📍 Clic en imagen' : 'Añadir Nota'}</button>
           </div>
       </header>
-
       <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 relative flex items-center justify-center bg-slate-950" 
-               onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
-            
+          <div className="flex-1 relative flex items-center justify-center bg-slate-950" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
             {!isCompareMode ? (
                 <div ref={imageContainerRef} onClick={(e) => {
                     if(!isPinMode || !imageContainerRef.current) return;
                     const r = imageContainerRef.current.getBoundingClientRect();
                     setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
                     setIsPinMode(false);
-                }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl transition-transform">
+                }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl">
                     <img src={page.imageUrl} className="max-h-[85vh] select-none" alt="" />
                     {commentsList.map((c, i) => (
                         <div key={c.id} className={`absolute w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold -ml-3 -mt-3 border border-white ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'}`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
@@ -130,36 +116,31 @@ const Revision: React.FC<PageReviewProps> = ({ projects }) => {
                         </div>
                      )}
                      <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
-                        <div className="absolute top-1/2 -mt-4 -ml-4 w-8 h-8 bg-white rounded-full flex items-center justify-center text-black font-bold shadow-xl">↔</div>
+                        <div className="absolute top-1/2 -mt-4 -ml-4 w-8 h-8 bg-white rounded-full flex items-center justify-center text-black font-bold">↔</div>
                      </div>
                 </div>
             )}
           </div>
-
-          <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col p-4 overflow-y-auto">
+          <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col p-4 overflow-y-auto shrink-0">
              <h3 className="font-bold text-slate-200 mb-4 border-b border-slate-800 pb-2">Comentarios</h3>
              {commentsList.map((c, i) => (
                  <div key={c.id} className={`p-3 rounded-lg mb-2 border ${c.resolved ? 'bg-emerald-900/20 border-emerald-800 text-emerald-500' : 'bg-slate-800 border-slate-700'}`}>
-                     <div className="flex justify-between items-start mb-1">
-                        <span className="font-bold text-xs uppercase">Nota #{i+1}</span>
-                        <button onClick={() => toggleResolved(c.id, c.resolved)}>{c.resolved ? '✅' : '⭕'}</button>
-                     </div>
+                     <div className="flex justify-between items-start mb-1"><span className="font-bold text-xs">#{i+1}</span><button onClick={() => toggleResolved(c.id, c.resolved)}>{c.resolved ? '✅' : '⭕'}</button></div>
                      <p className="text-sm">{c.content}</p>
                  </div>
              ))}
           </div>
       </div>
-
       {tempPin && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-2xl shadow-2xl text-slate-900 w-80 z-50">
-            <h3 className="font-black mb-4 uppercase text-xs tracking-widest text-slate-400">Nuevo Comentario</h3>
-            <textarea id="new-comment-text" className="w-full border border-slate-200 rounded-xl p-3 mb-4 h-24 outline-none focus:ring-2 focus:ring-rose-500" placeholder="Escribe aquí..."></textarea>
+            <h3 className="font-black mb-4 uppercase text-xs text-slate-400">Nuevo Comentario</h3>
+            <textarea id="new-comment-text" className="w-full border rounded-xl p-3 mb-4 h-24 outline-none focus:ring-2 focus:ring-rose-500" placeholder="Escribe aquí..."></textarea>
             <div className="flex gap-2">
-                <button onClick={() => setTempPin(null)} className="flex-1 py-2 font-bold text-slate-400">Cancelar</button>
+                <button onClick={() => setTempPin(null)} className="flex-1 py-2 font-bold text-slate-400 text-sm">Cancelar</button>
                 <button onClick={() => {
                     const txt = (document.getElementById('new-comment-text') as HTMLTextAreaElement).value;
                     handleSavePin(txt);
-                }} className="flex-1 py-2 bg-rose-600 text-white rounded-xl font-bold">Guardar</button>
+                }} className="flex-1 py-2 bg-rose-600 text-white rounded-xl font-bold text-sm">Guardar</button>
             </div>
         </div>
       )}
