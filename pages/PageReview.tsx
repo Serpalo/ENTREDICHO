@@ -29,23 +29,19 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   const [comment, setComment] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
-
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
   const [isPinMode, setIsPinMode] = useState(false);
   const [tempPin, setTempPin] = useState<{x: number, y: number} | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
-
   const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
-  
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [previousPageUrl, setPreviousPageUrl] = useState<string | null>(null);
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
   const project = projects.find(p => p.id === projectId);
-  
   const deadlineString = (project as any)?.review_deadline;
   const isReviewLocked = deadlineString ? new Date() > new Date(deadlineString) : false;
 
@@ -79,21 +75,9 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
   };
 
   const fetchPreviousVersion = async () => {
-    if (!page || !page.version || page.version <= 1) {
-        setPreviousPageUrl(null);
-        return;
-    }
-    const { data } = await supabase.from('pages')
-        .select('image_url')
-        .eq('project_id', projectId)
-        .eq('page_number', page.pageNumber)
-        .lt('version', page.version)
-        .order('version', { ascending: false })
-        .limit(1)
-        .single();
-        
-    if (data) setPreviousPageUrl(data.image_url);
-    else setPreviousPageUrl(null);
+    if (!page || !page.version || page.version <= 1) { setPreviousPageUrl(null); return; }
+    const { data } = await supabase.from('pages').select('image_url').eq('project_id', projectId).eq('page_number', page.pageNumber).lt('version', page.version).order('version', { ascending: false }).limit(1).single();
+    if (data) setPreviousPageUrl(data.image_url); else setPreviousPageUrl(null);
   };
 
   useEffect(() => {
@@ -103,274 +87,71 @@ const PageReview: React.FC<PageReviewProps> = ({ projects, setProjects, addNotif
         setIsPinMode(false);
         setTempPin(null);
         setIsCompareMode(false); 
-
         const intervalId = setInterval(fetchComments, 3000);
-        const channel = supabase
-          .channel('any')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => fetchComments())
-          .subscribe();
-
-        return () => {
-            clearInterval(intervalId);
-            supabase.removeChannel(channel);
-        };
+        const channel = supabase.channel('any').on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => fetchComments()).subscribe();
+        return () => { clearInterval(intervalId); supabase.removeChannel(channel); };
     } 
   }, [pageId]);
 
-  useEffect(() => {
-      if (page) fetchPreviousVersion();
-  }, [page, projectId]);
+  useEffect(() => { if (page) fetchPreviousVersion(); }, [page, projectId]);
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (tempPin) return;
-    e.preventDefault();
-    const scaleAmount = -e.deltaY * 0.001;
-    const newScale = Math.min(Math.max(0.5, transform.scale + scaleAmount), 5);
-    setTransform(prev => ({ ...prev, scale: newScale }));
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isPinMode || isCompareMode) return; 
-    setIsDragging(true);
-    setStartPan({ x: e.clientX - transform.x, y: e.clientY - transform.y });
-  };
-
+  const handleWheel = (e: React.WheelEvent) => { if (tempPin) return; e.preventDefault(); const scaleAmount = -e.deltaY * 0.001; const newScale = Math.min(Math.max(0.5, transform.scale + scaleAmount), 5); setTransform(prev => ({ ...prev, scale: newScale })); };
+  const handleMouseDown = (e: React.MouseEvent) => { if (isPinMode || isCompareMode) return; setIsDragging(true); setStartPan({ x: e.clientX - transform.x, y: e.clientY - transform.y }); };
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDraggingSlider && imageContainerRef.current) {
-        const rect = imageContainerRef.current.getBoundingClientRect();
-        const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-        const percent = (x / rect.width) * 100;
-        setSliderPosition(percent);
-        return;
-    }
-    if (!isDragging || isPinMode || isCompareMode) return;
-    e.preventDefault();
-    setTransform(prev => ({ ...prev, x: e.clientX - startPan.x, y: e.clientY - startPan.y }));
+    if (isDraggingSlider && imageContainerRef.current) { const rect = imageContainerRef.current.getBoundingClientRect(); const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width)); const percent = (x / rect.width) * 100; setSliderPosition(percent); return; }
+    if (!isDragging || isPinMode || isCompareMode) return; e.preventDefault(); setTransform(prev => ({ ...prev, x: e.clientX - startPan.x, y: e.clientY - startPan.y }));
   };
-
   const handleMouseUp = () => { setIsDragging(false); setIsDraggingSlider(false); };
   const resetView = () => setTransform({ scale: 1, x: 0, y: 0 });
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isReviewLocked || !isPinMode || !imageContainerRef.current) return;
-    const rect = imageContainerRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setTempPin({ x, y });
-    setIsPinMode(false);
-  };
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => { if (isReviewLocked || !isPinMode || !imageContainerRef.current) return; const rect = imageContainerRef.current.getBoundingClientRect(); const x = ((e.clientX - rect.left) / rect.width) * 100; const y = ((e.clientY - rect.top) / rect.height) * 100; setTempPin({ x, y }); setIsPinMode(false); };
 
   const handleSavePin = async () => {
     if (isReviewLocked) { alert("El plazo ha expirado."); return; }
     if (!comment.trim() || !pageId) return;
     setIsUploadingAttachment(true);
-
     let uploadedUrl = null;
     if (attachment) {
         const fileName = `${projectId}-${Date.now()}-${attachment.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        const { error: uploadError } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
-        if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage.from('comment-attachments').getPublicUrl(fileName);
-            uploadedUrl = publicUrl;
-        }
+        const { error } = await supabase.storage.from('comment-attachments').upload(fileName, attachment);
+        if (!error) { const { data } = supabase.storage.from('comment-attachments').getPublicUrl(fileName); uploadedUrl = data.publicUrl; }
     }
-
-    const newComment = { 
-        content: comment, 
-        page_id: pageId, 
-        x: tempPin?.x || 50, 
-        y: tempPin?.y || 50, 
-        resolved: false,
-        attachment_url: uploadedUrl 
-    };
-
+    const newComment = { content: comment, page_id: pageId, x: tempPin?.x || 50, y: tempPin?.y || 50, resolved: false, attachment_url: uploadedUrl };
     const { data, error } = await supabase.from('comments').insert([newComment]).select();
     setIsUploadingAttachment(false);
-
-    if (error) {
-      alert('Error: ' + error.message);
-    } else if (data) {
-      setCommentsList(prev => [data[0], ...prev]);
-      setComment("");
-      setAttachment(null);
-      setTempPin(null);
-      if (addNotification) addNotification({ type: 'system', title: 'Nota añadida', message: 'Corrección fijada.', link: '#' });
-    }
+    if (error) alert('Error: ' + error.message);
+    else if (data) { setCommentsList(prev => [data[0], ...prev]); setComment(""); setAttachment(null); setTempPin(null); if (addNotification) addNotification({ type: 'system', title: 'Nota añadida', message: 'Corrección fijada.', link: '#' }); }
   };
 
-  const handleDeleteComment = async (id: string) => {
-    if (isReviewLocked) return;
-    if (!window.confirm("¿Borrar corrección?")) return;
-    setCommentsList(prev => prev.filter(c => c.id !== id));
-    if (activePinId === id) setActivePinId(null);
-    await supabase.from('comments').delete().eq('id', id);
-  };
-
-  const handleToggleResolve = async (id: string, currentStatus: boolean) => {
-    if (isReviewLocked) return;
-    const newStatus = !currentStatus;
-    setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c));
-    await supabase.from('comments').update({ resolved: newStatus }).eq('id', id);
-  };
-
-  const navigateToPage = (targetPageId: string | null) => {
-      if (targetPageId) {
-          navigate(`/project/${projectId}/version/${versionId}/page/${targetPageId}`);
-      }
-  };
+  const handleDeleteComment = async (id: string) => { if (isReviewLocked) return; if (!window.confirm("¿Borrar corrección?")) return; setCommentsList(prev => prev.filter(c => c.id !== id)); if (activePinId === id) setActivePinId(null); await supabase.from('comments').delete().eq('id', id); };
+  const handleToggleResolve = async (id: string, currentStatus: boolean) => { if (isReviewLocked) return; const newStatus = !currentStatus; setCommentsList(prev => prev.map(c => c.id === id ? { ...c, resolved: newStatus } : c)); await supabase.from('comments').update({ resolved: newStatus }).eq('id', id); };
+  const navigateToPage = (targetPageId: string | null) => { if (targetPageId) navigate(`/project/${projectId}/version/${versionId}/page/${targetPageId}`); };
 
   if (!project || !version || !page) return <div className="p-10 text-center">Cargando...</div>;
 
   return (
     <div className="min-h-screen bg-slate-800 flex flex-col h-screen overflow-hidden">
       <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0 z-50">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-          </button>
-          <div>
-            <h1 className="font-black text-slate-800 text-lg flex items-center gap-2">
-                {project.name} 
-                <span className="text-slate-400 font-medium">| Pág {page.pageNumber}</span>
-            </h1>
-            <div className="flex items-center gap-2">
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Revisión v{version.versionNumber}</p>
-                 {isReviewLocked && <span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded animate-pulse">REVISIÓN CERRADA</span>}
-            </div>
-          </div>
-        </div>
-        
+        <div className="flex items-center gap-4"><button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-700"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg></button><div><h1 className="font-black text-slate-800 text-lg flex items-center gap-2">{project.name} <span className="text-slate-400 font-medium">| Pág {page.pageNumber}</span></h1><div className="flex items-center gap-2"><p className="text-[10px] font-bold text-slate-400 uppercase">Revisión v{version.versionNumber}</p>{isReviewLocked && <span className="bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded animate-pulse">REVISIÓN CERRADA</span>}</div></div></div>
         <div className="flex items-center gap-3">
-            <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2">
-                <button onClick={() => navigateToPage(prevPageId)} disabled={!prevPageId} className={`p-2 rounded transition-colors ${!prevPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`} title="Página Anterior">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                <button onClick={() => navigateToPage(nextPageId)} disabled={!nextPageId} className={`p-2 rounded transition-colors ${!nextPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`} title="Página Siguiente">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </button>
-            </div>
-
-            <div className="flex bg-slate-100 rounded-lg p-1 mr-2">
-                <button onClick={() => setTransform(t => ({...t, scale: t.scale - 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg></button>
-                <span className="px-2 flex items-center text-xs font-bold text-slate-500 w-12 justify-center">{Math.round(transform.scale * 100)}%</span>
-                <button onClick={() => setTransform(t => ({...t, scale: t.scale + 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button>
-                <button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-rose-500 font-bold text-xs">1:1</button>
-            </div>
-
-            {previousPageUrl && (
-                <button onClick={() => setIsCompareMode(!isCompareMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all ${isCompareMode ? 'bg-amber-500 text-white shadow-lg ring-4 ring-amber-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
-                    {isCompareMode ? 'Cerrar' : 'Comparar'}
-                </button>
-            )}
-
-           {!isReviewLocked && (
-               <button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-600'}`}>
-                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                 {isPinMode ? 'Cancelar' : 'Añadir corrección'}
-               </button>
-           )}
+            <div className="flex items-center bg-slate-100 rounded-lg p-1 mr-2"><button onClick={() => navigateToPage(prevPageId)} disabled={!prevPageId} className={`p-2 rounded transition-colors ${!prevPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`}><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button><div className="w-px h-4 bg-slate-300 mx-1"></div><button onClick={() => navigateToPage(nextPageId)} disabled={!nextPageId} className={`p-2 rounded transition-colors ${!nextPageId ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-white hover:text-rose-600 shadow-sm'}`}><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button></div>
+            <div className="flex bg-slate-100 rounded-lg p-1 mr-2"><button onClick={() => setTransform(t => ({...t, scale: t.scale - 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg></button><span className="px-2 flex items-center text-xs font-bold text-slate-500 w-12 justify-center">{Math.round(transform.scale * 100)}%</span><button onClick={() => setTransform(t => ({...t, scale: t.scale + 0.2}))} className="p-2 hover:bg-white rounded shadow-sm text-slate-500"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg></button><button onClick={resetView} className="ml-1 p-2 hover:bg-white rounded shadow-sm text-rose-500 font-bold text-xs">1:1</button></div>
+            {previousPageUrl && (<button onClick={() => setIsCompareMode(!isCompareMode)} className={`flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs transition-all ${isCompareMode ? 'bg-amber-500 text-white shadow-lg ring-4 ring-amber-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>{isCompareMode ? 'Cerrar' : 'Comparar'}</button>)}
+           {!isReviewLocked && (<button onClick={() => { setIsPinMode(!isPinMode); setTempPin(null); setIsCompareMode(false); }} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${isPinMode ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-200' : 'bg-slate-100 text-slate-600 hover:bg-white hover:text-rose-600'}`}><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>{isPinMode ? 'Cancelar' : 'Añadir corrección'}</button>)}
         </div>
       </header>
-
       <div className="flex-1 flex overflow-hidden relative">
         <div className={`flex-1 overflow-hidden flex items-center justify-center relative bg-slate-900 ${isDragging ? 'cursor-grabbing' : isCompareMode ? 'cursor-ew-resize' : 'cursor-grab'}`} onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
           <div ref={imageContainerRef} onClick={handleCanvasClick} className="relative shadow-2xl transition-transform duration-75 ease-out origin-center" style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, minWidth: '600px', width: 'auto' }}>
             <img src={page.imageUrl} alt="Actual" className="max-w-none block select-none pointer-events-none" style={{ height: 'auto', width: 'auto', maxHeight: '90vh' }} />
-
-            {isCompareMode && previousPageUrl && (
-                <>
-                    <div className="absolute inset-0 overflow-hidden select-none pointer-events-none border-r-2 border-amber-400 bg-slate-900" style={{ width: `${sliderPosition}%` }}>
-                        <img src={previousPageUrl} alt="Anterior" className="max-w-none block" style={{ height: '100%', width: 'auto', maxWidth: 'none' }} />
-                        <div className="absolute top-4 left-4 bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl">VERSIÓN ANTERIOR</div>
-                    </div>
-                    <div className="absolute inset-y-0 w-8 -ml-4 cursor-ew-resize z-50 flex items-center justify-center group" style={{ left: `${sliderPosition}%` }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingSlider(true); }}>
-                        <div className="w-0.5 h-full bg-amber-400 shadow-[0_0_10px_rgba(0,0,0,0.5)]"></div>
-                        <div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute hover:scale-110 transition-transform">
-                            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" transform="rotate(90 12 12)" /></svg>
-                        </div>
-                    </div>
-                    <div className="absolute top-4 right-4 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl z-10">VERSIÓN ACTUAL</div>
-                </>
-            )}
-
-            {!isCompareMode && (
-                <>
-                    {isPinMode && !isReviewLocked && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}
-                    {commentsList.map((c) => (
-                        <div key={c.id} onClick={(e) => { e.stopPropagation(); setActivePinId(activePinId === c.id ? null : c.id); }} className="absolute w-8 h-8 -ml-4 -mt-8 z-20 cursor-pointer group hover:z-30" style={{ left: `${c.x}%`, top: `${c.y}%` }}>
-                            <svg className={`w-full h-full drop-shadow-md transition-colors ${c.resolved ? 'text-emerald-500' : 'text-rose-500'}`} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-                        </div>
-                    ))}
-                    {tempPin && <div className="absolute w-8 h-8 -ml-4 -mt-8 z-30" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}><svg className="w-full h-full text-rose-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>}
-                </>
-            )}
+            {isCompareMode && previousPageUrl && (<><div className="absolute inset-0 overflow-hidden select-none pointer-events-none border-r-2 border-amber-400 bg-slate-900" style={{ width: `${sliderPosition}%` }}><img src={previousPageUrl} alt="Anterior" className="max-w-none block" style={{ height: '100%', width: 'auto', maxWidth: 'none' }} /><div className="absolute top-4 left-4 bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl">VERSIÓN ANTERIOR</div></div><div className="absolute inset-y-0 w-8 -ml-4 cursor-ew-resize z-50 flex items-center justify-center group" style={{ left: `${sliderPosition}%` }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingSlider(true); }}><div className="w-0.5 h-full bg-amber-400 shadow-[0_0_10px_rgba(0,0,0,0.5)]"></div><div className="w-8 h-8 bg-white border-2 border-amber-400 rounded-full shadow-xl flex items-center justify-center absolute hover:scale-110 transition-transform"><svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" transform="rotate(90 12 12)" /></svg></div></div><div className="absolute top-4 right-4 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-xl z-10">VERSIÓN ACTUAL</div></>)}
+            {!isCompareMode && (<>{isPinMode && !isReviewLocked && <div className="absolute inset-0 bg-rose-500/10 z-10 border-2 border-rose-500 animate-pulse cursor-crosshair"><div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transform -translate-y-full">Haz clic para marcar error</div></div>}{commentsList.map((c) => (<div key={c.id} onClick={(e) => { e.stopPropagation(); setActivePinId(activePinId === c.id ? null : c.id); }} className="absolute w-8 h-8 -ml-4 -mt-8 z-20 cursor-pointer group hover:z-30" style={{ left: `${c.x}%`, top: `${c.y}%` }}><svg className={`w-full h-full drop-shadow-md transition-colors ${c.resolved ? 'text-emerald-500' : 'text-rose-500'}`} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>))}{tempPin && <div className="absolute w-8 h-8 -ml-4 -mt-8 z-30" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}><svg className="w-full h-full text-rose-500 drop-shadow-xl animate-bounce" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>}</>)}
           </div>
         </div>
-
         <aside className="w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-2xl z-40">
-          {isReviewLocked && !tempPin && (
-              <div className="p-4 bg-red-50 border-b border-red-100 text-center">
-                  <p className="text-red-700 font-bold text-xs uppercase tracking-widest">⚠️ PLAZO FINALIZADO</p>
-                  <p className="text-red-500 text-[10px] mt-1">No se pueden añadir ni modificar notas.</p>
-              </div>
-          )}
-
+          {isReviewLocked && !tempPin && (<div className="p-4 bg-red-50 border-b border-red-100 text-center"><p className="text-red-700 font-bold text-xs uppercase tracking-widest">⚠️ PLAZO FINALIZADO</p><p className="text-red-500 text-[10px] mt-1">No se pueden añadir ni modificar notas.</p></div>)}
           {tempPin ? (
-            <div className="p-6 bg-rose-50 border-b border-rose-100 h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-4 text-rose-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div>
-              <textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-rose-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-rose-200 outline-none transition-all shadow-inner mb-4" />
-              
-              <div className="mb-4">
-                  <input type="file" ref={attachmentInputRef} className="hidden" accept="image/*" onChange={(e) => setAttachment(e.target.files?.[0] || null)} />
-                  <button onClick={() => attachmentInputRef.current?.click()} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                      {attachment ? <span className="text-rose-600 truncate max-w-[200px]">{attachment.name}</span> : "Adjuntar Imagen de Referencia"}
-                  </button>
-              </div>
-
-              <div className="flex gap-2">
-                <button onClick={() => { setTempPin(null); setAttachment(null); }} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                <button onClick={handleSavePin} disabled={isUploadingAttachment} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-wait">
-                    {isUploadingAttachment ? 'Subiendo...' : 'Guardar'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Notas ({commentsList.length})</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
-                {commentsList.map((c) => (
-                  <div key={c.id} onClick={() => setActivePinId(c.id)} className={`group relative p-4 rounded-xl border transition-all ${activePinId === c.id ? 'ring-2 ring-offset-1' : ''} ${c.resolved ? 'bg-emerald-50 border-emerald-200 ring-emerald-200' : 'bg-rose-50 border-rose-200 ring-rose-200'}`}>
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1"><input type="checkbox" checked={c.resolved || false} disabled={isReviewLocked} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"/></div>
-                      <div className="flex-1">
-                        <p className={`text-sm font-medium leading-relaxed ${c.resolved ? 'text-emerald-800 line-through opacity-70' : 'text-rose-900'}`}>{c.content}</p>
-                        
-                        {c.attachment_url && (
-                            <div className="mt-3">
-                                <a href={c.attachment_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:border-rose-300 transition-colors group/link">
-                                    <div className="w-8 h-8 bg-slate-100 rounded bg-cover bg-center" style={{ backgroundImage: `url(${c.attachment_url})` }}></div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p>
-                                    </div>
-                                    <svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                </a>
-                            </div>
-                        )}
-
-                        <p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p>
-                      </div>
-                      {!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+            <div className="p-6 bg-rose-50 border-b border-rose-100 h-full flex flex-col"><div className="flex items-center gap-2 mb-4 text-rose-700 font-black uppercase text-xs tracking-widest">Nueva Nota</div><textarea autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escribe aquí tu corrección..." className="flex-1 w-full bg-white border border-rose-200 rounded-xl p-4 text-sm resize-none focus:ring-4 focus:ring-rose-200 outline-none transition-all shadow-inner mb-4" /><div className="mb-4"><input type="file" ref={attachmentInputRef} className="hidden" accept="image/*" onChange={(e) => setAttachment(e.target.files?.[0] || null)} /><button onClick={() => attachmentInputRef.current?.click()} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>{attachment ? <span className="text-rose-600 truncate max-w-[200px]">{attachment.name}</span> : "Adjuntar Imagen de Referencia"}</button></div><div className="flex gap-2"><button onClick={() => { setTempPin(null); setAttachment(null); }} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">Cancelar</button><button onClick={handleSavePin} disabled={isUploadingAttachment} className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-wait">{isUploadingAttachment ? 'Subiendo...' : 'Guardar'}</button></div></div>
+          ) : (<><div className="p-5 border-b border-slate-100 flex justify-between items-center"><h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Notas ({commentsList.length})</h3></div><div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">{commentsList.map((c) => (<div key={c.id} onClick={() => setActivePinId(c.id)} className={`group relative p-4 rounded-xl border transition-all ${activePinId === c.id ? 'ring-2 ring-offset-1' : ''} ${c.resolved ? 'bg-emerald-50 border-emerald-200 ring-emerald-200' : 'bg-rose-50 border-rose-200 ring-rose-200'}`}><div className="flex items-start gap-3"><div className="mt-1"><input type="checkbox" checked={c.resolved || false} disabled={isReviewLocked} onChange={(e) => { e.stopPropagation(); handleToggleResolve(c.id, c.resolved || false); }} className="w-5 h-5 rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"/></div><div className="flex-1"><p className={`text-sm font-medium leading-relaxed ${c.resolved ? 'text-emerald-800 line-through opacity-70' : 'text-rose-900'}`}>{c.content}</p>{c.attachment_url && (<div className="mt-3"><a href={c.attachment_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 hover:border-rose-300 transition-colors group/link"><div className="w-8 h-8 bg-slate-100 rounded bg-cover bg-center" style={{ backgroundImage: `url(${c.attachment_url})` }}></div><div className="flex-1 min-w-0"><p className="text-[10px] font-bold text-slate-500 group-hover/link:text-rose-600 truncate">Ver adjunto</p></div><svg className="w-4 h-4 text-slate-400 group-hover/link:text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg></a></div>)}<p className="text-[10px] opacity-50 mt-2 font-bold">{new Date(c.created_at).toLocaleString()}</p></div>{!isReviewLocked && <button onClick={(e) => { e.stopPropagation(); handleDeleteComment(c.id); }} className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>}</div></div>))}</div></>)}
         </aside>
       </div>
     </div>
