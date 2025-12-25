@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
-import { supabase } from '../supabase';
+// CORRECCIÓN AQUÍ: Usamos un solo punto (.) porque están en la misma carpeta
+import { supabase } from './supabase';
 import { Project, Folder, AppNotification } from './types';
 import Dashboard from './pages/Dashboard';
 import ProjectDetail from './pages/ProjectDetail';
@@ -10,7 +11,6 @@ import PageReview from './pages/PageReview';
 const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, allFolders: Folder[], level?: number }) => {
   const location = useLocation();
   const isActive = location.pathname === `/folder/${folder.id}`;
-  // ESTADO PARA DESPLEGAR/CERRAR
   const [isOpen, setIsOpen] = useState(false);
   
   const children = allFolders.filter(f => f.parentId === folder.id);
@@ -22,7 +22,6 @@ const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, all
         className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-all mb-0.5 text-sm cursor-pointer ${isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
         style={{ marginLeft: `${level * 12}px` }}
       >
-        {/* FLECHITA DE DESPLIEGUE */}
         <button 
             onClick={(e) => { e.preventDefault(); setIsOpen(!isOpen); }} 
             className={`p-1 rounded hover:bg-slate-200 text-slate-400 text-[10px] transition-transform ${hasChildren ? '' : 'invisible'} ${isOpen ? 'rotate-90' : ''}`}
@@ -36,7 +35,6 @@ const FolderTreeItem = ({ folder, allFolders, level = 0 }: { folder: Folder, all
         </Link>
       </div>
       
-      {/* RENDERIZADO DE HIJOS (SOLO SI ESTÁ ABIERTO) */}
       {isOpen && children.map(child => (
         <FolderTreeItem key={child.id} folder={child} allFolders={allFolders} level={level + 1} />
       ))}
