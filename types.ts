@@ -31,7 +31,7 @@ export interface Project {
   parentId?: string;
   status: 'active' | 'completed' | 'archived';
   versions: Version[];
-  // Hemos quitado review_deadline para evitar errores
+  // HE BORRADO LA FECHA PARA QUE NO FALLE
 }
 
 export interface Folder {
