@@ -18,13 +18,13 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
-  // 1. COMPARADOR
+  // 1. ESTADOS DEL COMPARADOR
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
-  // 2. BÚSQUEDA BLINDADA (EVITA PANTALLA EN BLANCO)
+  // 2. BÚSQUEDA DE DATOS
   const project = projects.find(p => p.id === projectId);
   let page: any = null;
   let currentVer: any = null;
@@ -42,11 +42,13 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     }
   }
 
-  // 3. NAVEGACIÓN
+  // 3. NAVEGACIÓN Y LÓGICA DE COMPARACIÓN
   const currentIndex = allPagesInVersion.findIndex(p => p.id === pageId);
   const prevPage = allPagesInVersion[currentIndex - 1];
   const nextPage = allPagesInVersion[currentIndex + 1];
-  const otherVersions = project ? project.versions.filter(v => v.versionNumber !== currentVer?.versionNumber) : [];
+  
+  // Filtramos todas las versiones excepto la que estamos viendo
+  const otherVersions = project ? project.versions.filter(v => v.id !== currentVer?.id) : [];
   
   const compareImageUrl = compareVersionId 
     ? project?.versions.find(v => v.id === compareVersionId)?.pages.find((p:any) => p.pageNumber === page?.pageNumber)?.imageUrl 
@@ -68,7 +70,6 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     if (data) setCommentsList(data);
   };
 
-  // 4. EXPORTAR PDF (NOMBRE CORREGIDO)
   const exportToPDF = () => {
     const doc = new jsPDF() as any;
     doc.setFont("helvetica", "bold");
@@ -80,7 +81,6 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     doc.save(`Correcciones_${project?.name}_P${page?.pageNumber}.pdf`);
   };
 
-  // 5. SUBIDA DE ARCHIVOS ADJUNTOS
   const handleSave = async () => {
     const text = (document.getElementById('note-text') as HTMLTextAreaElement)?.value;
     if (!text || !pageId) return;
@@ -106,7 +106,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     fetchComments();
   };
 
-  if (!project || !page) return <div className="h-screen flex items-center justify-center font-black text-slate-400 uppercase text-xs">Cargando revisión...</div>;
+  if (!project || !page) return <div className="h-screen flex items-center justify-center font-black text-slate-400">CARGANDO REVISIÓN...</div>;
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden select-none"
@@ -135,17 +135,30 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                 {isPinMode ? 'PINCHA EN LA IMAGEN' : 'MARCAR CORRECCIÓN'}
              </button>
 
+             {/* 4. SELECTOR DE VERSIÓN CORREGIDO */}
              {otherVersions.length > 0 && (
-                <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-100'}`}>
-                    {isCompareMode ? 'Salir' : 'Comparar'}
-                </button>
+                <div className="flex items-center gap-2 border-l pl-2 ml-2">
+                  {isCompareMode && (
+                    <select 
+                      className="bg-white border-2 border-blue-100 rounded-xl px-3 py-2 text-[10px] font-black uppercase outline-none focus:border-blue-500"
+                      onChange={(e) => setCompareVersionId(e.target.value)}
+                      value={compareVersionId}
+                    >
+                      <option value="">¿Versión?</option>
+                      {otherVersions.map(v => <option key={v.id} value={v.id}>V{v.versionNumber}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-100'}`}>
+                      {isCompareMode ? 'Salir' : 'Comparar'}
+                  </button>
+                </div>
              )}
           </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black hover:scale-110 transition-all">←</button>}
-          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black hover:scale-110 transition-all">→</button>}
+          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
+          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
 
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
             {!isCompareMode ? (
@@ -171,7 +184,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                         </div>
                      )}
                      <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50 shadow-xl" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
-                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100">↔</div>
+                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100 transition-transform hover:scale-110">↔</div>
                      </div>
                 </div>
             )}
@@ -192,12 +205,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                                 </div>
                             </div>
                             <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-40 line-through' : 'text-slate-700'}`}>{c.content}</p>
-                            {/* 6. DESCARGA DE ADJUNTOS */}
-                            {c.image_url && (
-                              <a href={c.image_url} target="_blank" rel="noreferrer" download className="mt-3 block w-full py-2 bg-slate-50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm transition-all">
-                                📥 Ver Adjunto
-                              </a>
-                            )}
+                            {c.image_url && <a href={c.image_url} target="_blank" rel="noreferrer" download className="mt-3 block w-full py-2 bg-slate-50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500">📥 Ver Adjunto</a>}
                         </div>
                       );
                   })}
@@ -210,7 +218,6 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
             <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
                 <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">{tempPin.x < 0 ? '📝 CORRECCIONES GENERALES' : 'NUEVA CORRECCIÓN'}</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-5 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
-                {/* 7. SUBIDA DE ARCHIVOS ADJUNTOS */}
                 <div className="mb-6">
                   <label htmlFor="file-upload" className="text-[10px] block w-full py-3 bg-slate-50 border rounded-xl text-center font-black uppercase text-slate-500 cursor-pointer hover:bg-slate-100 transition-colors">
                     {fileToUpload ? fileToUpload.name : '📎 Adjuntar Imagen'}
