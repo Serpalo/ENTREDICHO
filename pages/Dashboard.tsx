@@ -16,301 +16,131 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const { folderId } = useParams<{ folderId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+
+  // Filtramos qué se ve en pantalla (Root o dentro de carpeta)
+  const currentProjects = projects.filter(p => folderId ? p.parentId === folderId : !p.parentId);
+  const currentFolders = folders.filter(f => folderId ? f.parentId === folderId : !f.parentId);
   
-  // ESTADOS PARA EL MODAL DE SUBIDA
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [deadline, setDeadline] = useState("");
-
-  const currentFolder = folders.find(f => f.id === folderId);
-  const filteredProjects = projects.filter(p => p.parentId === (folderId || null));
-  const filteredFolders = folders.filter(f => f.parentId === (folderId || null));
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    setIsUploading(true);
-    setShowUploadModal(false);
-
-    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    const projectName = files[0].name.split('.')[0].replace(/[-_]/g, ' ');
-
-    try {
-      const { data: projectData, error: projError } = await supabase
-        .from('projects')
-        .insert([{ 
-            title: projectName, 
-            parent_id: folderId || null, 
-            status: 'active',
-            review_deadline: deadline || null
-        }])
-        .select();
-
-      if (projError || !projectData) throw new Error("Error creando proyecto");
-      const newProjectId = projectData[0].id;
-
-      const newPages = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const fileName = `${newProjectId}-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        await supabase.storage.from('brochures').upload(fileName, file);
-        const { data: { publicUrl } } = supabase.storage.from('brochures').getPublicUrl(fileName);
-        const { data: pageData } = await supabase.from('pages').insert([{ project_id: newProjectId, image_url: publicUrl, page_number: i + 1, version: 1, status: '1ª corrección' }]).select();
-        if (pageData) newPages.push({ id: pageData[0].id.toString(), pageNumber: i + 1, imageUrl: publicUrl, status: '1ª corrección', approvals: {}, comments: [] });
-      }
-
-      window.location.reload(); 
-
-    } catch (error) {
-      console.error(error);
-      alert("Error al subir.");
-    } finally {
-      setIsUploading(false);
-      setDeadline("");
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
+  const currentFolderName = folderId ? folders.find(f => f.id === folderId)?.name : "Proyectos";
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     const { data, error } = await supabase.from('folders').insert([{ name: newFolderName, parent_id: folderId || null }]).select();
     if (!error && data) {
-      const newFolder: Folder = { id: data[0].id.toString(), name: data[0].name, parentId: data[0].parent_id, type: 'folder' };
-      setFolders(prev => [...prev, newFolder]);
+      setFolders([...folders, { id: data[0].id.toString(), name: data[0].name, type: 'folder', parentId: folderId }]);
       setNewFolderName("");
-      setIsCreatingFolder(false);
+      setShowNewFolderInput(false);
     }
   };
 
-  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm("¿Seguro que quieres eliminar este proyecto?")) return;
-    const { error } = await supabase.from('projects').delete().eq('id', id);
-    if (!error) setProjects(prev => prev.filter(p => p.id !== id));
-  };
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    setIsUploading(true);
+    const file = e.target.files[0];
 
-  // --- NUEVA FUNCIÓN PARA BORRAR CARPETAS ---
-  const handleDeleteFolder = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm("¿Seguro que quieres eliminar esta carpeta? Se borrará todo su contenido.")) return;
-    const { error } = await supabase.from('folders').delete().eq('id', id);
-    if (!error) setFolders(prev => prev.filter(f => f.id !== id));
-  };
+    try {
+      // 1. Subir imagen
+      const fileName = `cover-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
+      if (uploadError) throw uploadError;
 
-  const getBreadcrumbs = () => {
-    const crumbs = [];
-    let current = currentFolder;
-    while (current) {
-      crumbs.unshift(current);
-      current = folders.find(f => f.id === current.parentId);
+      const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(fileName);
+
+      // 2. Crear Proyecto (SIN FECHAS, versión segura)
+      const projectName = file.name.split('.')[0];
+      const { data: projData, error: projError } = await supabase.from('projects').insert([{
+        title: projectName, // Usamos title para compatibilidad
+        name: projectName,
+        status: '1ª corrección',
+        parent_id: folderId || null
+      }]).select();
+
+      if (projError) throw projError;
+
+      const newProject = projData[0];
+
+      // 3. Crear Página 1
+      await supabase.from('pages').insert([{
+        project_id: newProject.id,
+        image_url: urlData.publicUrl,
+        page_number: 1,
+        version: 1,
+        status: '1ª corrección'
+      }]);
+
+      // 4. Actualizar pantalla
+      setTimeout(() => window.location.reload(), 1000);
+
+    } catch (error: any) {
+      alert("Error al subir: " + error.message);
+      setIsUploading(false);
     }
-    return crumbs;
   };
 
   return (
-    <div className="flex h-full bg-slate-50 relative">
-      <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*,.pdf" onChange={handleFileUpload} />
-
-      {/* --- MODAL PARA FECHA LÍMITE --- */}
-      {showUploadModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in duration-200">
-                <h3 className="text-lg font-black text-slate-800 mb-2">Nuevo Proyecto</h3>
-                <p className="text-sm text-slate-500 mb-4">Configura el plazo de revisión antes de subir los archivos.</p>
-                
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha límite para correcciones (Opcional)</label>
-                <input 
-                    type="datetime-local" 
-                    value={deadline}
-                    onChange={(e) => setDeadline(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500 mb-6"
-                />
-
-                <div className="flex gap-3">
-                    <button onClick={() => setShowUploadModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
-                    <button 
-                        onClick={() => fileInputRef.current?.click()} 
-                        className="flex-1 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 transition-colors"
-                    >
-                        Seleccionar Archivos
-                    </button>
+    <div className="p-8 min-h-full bg-slate-50">
+      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={handleFileUpload} />
+      
+      <div className="flex justify-between items-center mb-8">
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+           {folderId && <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-slate-800 transition">←</button>}
+           {currentFolderName}
+        </h2>
+        <div className="flex gap-3">
+            {showNewFolderInput ? (
+                <div className="flex gap-2 bg-white p-1 rounded-xl border shadow-sm animate-fade-in">
+                    <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} placeholder="Nombre carpeta..." className="px-3 py-1 outline-none text-sm" />
+                    <button onClick={handleCreateFolder} className="bg-slate-900 text-white px-3 rounded-lg text-xs font-bold">OK</button>
+                    <button onClick={() => setShowNewFolderInput(false)} className="text-slate-400 px-2">✕</button>
                 </div>
-            </div>
+            ) : (
+                <button onClick={() => setShowNewFolderInput(true)} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-sm hover:bg-slate-50 transition shadow-sm flex items-center gap-2">
+                    <span className="text-lg leading-none">+</span> Nueva Carpeta
+                </button>
+            )}
+            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="px-6 py-2 bg-rose-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-rose-200 hover:bg-rose-700 hover:-translate-y-0.5 transition flex items-center gap-2">
+                {isUploading ? 'Subiendo...' : (<><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg> Subir Folleto</>)}
+            </button>
+        </div>
+      </div>
+
+      {(currentFolders.length === 0 && currentProjects.length === 0) ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-3xl h-64 flex flex-col items-center justify-center text-slate-400 gap-4">
+            <svg className="w-12 h-12 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+            <p className="font-medium">Esta carpeta está vacía</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            {/* 1. MOSTRAR CARPETAS PRIMERO */}
+            {currentFolders.map(folder => (
+                <div key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group bg-slate-100 hover:bg-white border border-transparent hover:border-slate-200 p-6 rounded-2xl cursor-pointer transition-all hover:shadow-lg flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform text-slate-300 group-hover:text-amber-400">
+                        <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>
+                    </div>
+                    <h3 className="font-bold text-slate-700 text-sm">{folder.name}</h3>
+                </div>
+            ))}
+
+            {/* 2. MOSTRAR PROYECTOS */}
+            {currentProjects.map(project => (
+                <div key={project.id} onClick={() => navigate(`/project/${project.id}`)} className="group bg-white p-4 rounded-2xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1">
+                    <div className="aspect-[3/4] bg-slate-50 rounded-xl mb-4 overflow-hidden relative">
+                         {project.versions?.[0]?.pages?.[0]?.imageUrl ? (
+                             <img src={project.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" />
+                         ) : (
+                             <div className="w-full h-full flex items-center justify-center text-rose-200 font-black text-4xl">A</div>
+                         )}
+                         <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider text-slate-800 shadow-sm">{project.status}</div>
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-sm leading-tight mb-1 truncate">{project.name}</h3>
+                    <p className="text-xs text-slate-400">v{project.versions?.length || 1}</p>
+                </div>
+            ))}
         </div>
       )}
-
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
-        <div className="p-6">
-          <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Estructura</h2>
-          <nav className="space-y-1">
-            <button onClick={() => navigate('/')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${!folderId ? 'bg-rose-50 text-rose-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-              <svg className={`w-5 h-5 ${!folderId ? 'text-rose-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-              Proyectos
-            </button>
-            {folders.filter(f => !f.parentId).map(folder => (
-              <div key={folder.id} className="pl-4">
-                 <button onClick={() => navigate(`/folder/${folder.id}`)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${folderId === folder.id ? 'bg-rose-50 text-rose-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                   <svg className={`w-5 h-5 ${folderId === folder.id ? 'text-rose-500' : 'text-slate-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                   {folder.name}
-                 </button>
-                 {(folderId === folder.id || folders.find(f => f.id === folderId)?.parentId === folder.id) && (
-                    <div className="pl-4 mt-1 space-y-1 border-l-2 border-slate-100 ml-2">
-                        {folders.filter(sub => sub.parentId === folder.id).map(sub => (
-                            <button key={sub.id} onClick={() => navigate(`/folder/${sub.id}`)} className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-bold ${folderId === sub.id ? 'text-rose-600 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                                {sub.name}
-                            </button>
-                        ))}
-                    </div>
-                 )}
-              </div>
-            ))}
-          </nav>
-        </div>
-      </aside>
-
-      <main className="flex-1 overflow-auto p-8">
-        <div className="flex items-center justify-between mb-8">
-            <div>
-               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                  <span onClick={() => navigate('/')} className="cursor-pointer hover:text-rose-600">Proyectos</span>
-                  {getBreadcrumbs().map(crumb => (<React.Fragment key={crumb.id}><span>/</span><span onClick={() => navigate(`/folder/${crumb.id}`)} className="cursor-pointer hover:text-rose-600">{crumb.name}</span></React.Fragment>))}
-               </div>
-               <h1 className="text-3xl font-black text-slate-900 tracking-tight">{currentFolder ? currentFolder.name : 'Proyectos'}</h1>
-            </div>
-
-            <div className="flex gap-3">
-                <div className="flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
-                    <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-                    </button>
-                    <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                    </button>
-                </div>
-
-                {!isCreatingFolder ? (
-                    <button onClick={() => setIsCreatingFolder(true)} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-rose-200 hover:text-rose-600 text-slate-700 rounded-xl font-bold text-sm shadow-sm transition-all">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-                        Nueva Carpeta
-                    </button>
-                ) : (
-                    <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-rose-200 shadow-lg animate-in fade-in slide-in-from-right-5">
-                        <input autoFocus type="text" placeholder="Nombre..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} className="w-32 px-3 py-1.5 text-sm outline-none font-bold text-slate-700" onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} />
-                        <button onClick={handleCreateFolder} className="p-1.5 bg-rose-100 text-rose-600 rounded-lg hover:bg-rose-200"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg></button>
-                        <button onClick={() => setIsCreatingFolder(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                    </div>
-                )}
-
-                <button onClick={() => !isUploading && setShowUploadModal(true)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm text-white shadow-xl hover:-translate-y-1 transition-all ${isUploading ? 'bg-slate-400 cursor-wait' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'}`}>
-                    {isUploading ? 'Subiendo...' : 'Subir Folleto'}
-                    {!isUploading && <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
-                </button>
-            </div>
-        </div>
-
-        {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
-                {/* --- CARPETAS EN GRID (Con papelera) --- */}
-                {filteredFolders.map(folder => (
-                    <div key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-rose-100 transition-all cursor-pointer">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform">
-                               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                            </div>
-                            <button onClick={(e) => handleDeleteFolder(folder.id, e)} className="text-slate-300 hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                        </div>
-                        <h3 className="font-bold text-slate-800 truncate">{folder.name}</h3>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Carpeta</p>
-                    </div>
-                ))}
-                
-                {/* --- PROYECTOS EN GRID --- */}
-                {filteredProjects.map(project => {
-                    const currentVersion = project.versions[0];
-                    const coverImage = currentVersion?.pages[0]?.imageUrl;
-                    const pageCount = currentVersion?.pages.length || 0;
-                    return (
-                        <div key={project.id} onClick={() => navigate(`/project/${project.id}`)} className="group bg-white p-4 rounded-3xl border border-slate-200 shadow-sm hover:shadow-2xl hover:border-rose-200 transition-all cursor-pointer flex flex-col">
-                            <div className="relative aspect-[4/3] bg-slate-100 rounded-2xl overflow-hidden mb-4 border border-slate-100">
-                                 {coverImage ? <img src={coverImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="flex items-center justify-center h-full text-slate-300"><svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>}
-                                 <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg">{pageCount} págs</div>
-                            </div>
-                            <div className="flex justify-between items-start">
-                                <div className="flex-1 min-w-0 pr-2">
-                                    <h3 className="font-bold text-slate-900 truncate leading-tight">{project.name}</h3>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Folleto</p>
-                                </div>
-                                <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-1 rounded-lg hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        ) : (
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50 border-b border-slate-100">
-                        <tr>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Nombre</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Tipo</th>
-                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                        {/* --- LISTA DE CARPETAS --- */}
-                        {filteredFolders.map(folder => (
-                            <tr key={folder.id} onClick={() => navigate(`/folder/${folder.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
-                                <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg></div>
-                                        <span className="font-bold text-slate-700">{folder.name}</span>
-                                    </div>
-                                </td>
-                                <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Carpeta</td>
-                                <td className="px-8 py-4 text-right">
-                                    <button onClick={(e) => handleDeleteFolder(folder.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors">
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                        {/* --- LISTA DE PROYECTOS --- */}
-                        {filteredProjects.map(project => (
-                            <tr key={project.id} onClick={() => navigate(`/project/${project.id}`)} className="group hover:bg-slate-50 cursor-pointer transition-colors">
-                                <td className="px-8 py-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 overflow-hidden">
-                                            {project.versions[0]?.pages[0]?.imageUrl ? <img src={project.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
-                                        </div>
-                                        <span className="font-bold text-slate-700">{project.name}</span>
-                                    </div>
-                                </td>
-                                <td className="px-8 py-4 text-xs font-bold text-slate-400 uppercase">Folleto</td>
-                                <td className="px-8 py-4 text-right">
-                                    <button onClick={(e) => handleDeleteProject(project.id, e)} className="text-slate-300 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 transition-colors">
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {filteredFolders.length === 0 && filteredProjects.length === 0 && (
-            <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50 mt-10">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4"><svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg></div>
-                <p className="text-slate-400 font-bold text-sm">Esta carpeta está vacía</p>
-            </div>
-        )}
-      </main>
     </div>
   );
 };
