@@ -18,13 +18,13 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
-  // COMPARADOR
+  // 1. COMPARADOR
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [isDraggingSlider, setIsDraggingSlider] = useState(false);
 
-  // BÚSQUEDA ROBUSTA (EVITA PANTALLA EN BLANCO)
+  // 2. BÚSQUEDA BLINDADA (EVITA PANTALLA EN BLANCO)
   const project = projects.find(p => p.id === projectId);
   let page: any = null;
   let currentVer: any = null;
@@ -42,7 +42,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     }
   }
 
-  // NAVEGACIÓN
+  // 3. NAVEGACIÓN
   const currentIndex = allPagesInVersion.findIndex(p => p.id === pageId);
   const prevPage = allPagesInVersion[currentIndex - 1];
   const nextPage = allPagesInVersion[currentIndex + 1];
@@ -68,7 +68,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     if (data) setCommentsList(data);
   };
 
-  // PDF CON TEXTOS CORREGIDOS
+  // 4. EXPORTAR PDF (NOMBRE CORREGIDO)
   const exportToPDF = () => {
     const doc = new jsPDF() as any;
     doc.setFont("helvetica", "bold");
@@ -80,6 +80,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     doc.save(`Correcciones_${project?.name}_P${page?.pageNumber}.pdf`);
   };
 
+  // 5. SUBIDA DE ARCHIVOS ADJUNTOS
   const handleSave = async () => {
     const text = (document.getElementById('note-text') as HTMLTextAreaElement)?.value;
     if (!text || !pageId) return;
@@ -105,7 +106,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     fetchComments();
   };
 
-  if (!project || !page) return <div className="h-screen flex items-center justify-center font-black text-slate-400">CARGANDO REVISIÓN...</div>;
+  if (!project || !page) return <div className="h-screen flex items-center justify-center font-black text-slate-400 uppercase text-xs">Cargando revisión...</div>;
 
   return (
     <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden select-none"
@@ -162,7 +163,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                     {tempPin && tempPin.x >= 0 && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
                 </div>
             ) : (
-                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl" style={{ transform: `scale(${scale})` }}>
+                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl transition-transform" style={{ transform: `scale(${scale})` }}>
                      <img src={page.imageUrl} className="max-h-[82vh] pointer-events-none block" alt="" />
                      {compareImageUrl && (
                         <div className="absolute top-0 left-0 h-full overflow-hidden border-r-2 border-white pointer-events-none" style={{ width: `${sliderPosition}%` }}>
@@ -191,7 +192,12 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                                 </div>
                             </div>
                             <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-40 line-through' : 'text-slate-700'}`}>{c.content}</p>
-                            {c.image_url && <a href={c.image_url} target="_blank" rel="noreferrer" download className="mt-3 block w-full py-2 bg-slate-50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500">📥 Ver Adjunto</a>}
+                            {/* 6. DESCARGA DE ADJUNTOS */}
+                            {c.image_url && (
+                              <a href={c.image_url} target="_blank" rel="noreferrer" download className="mt-3 block w-full py-2 bg-slate-50 border rounded-xl text-center text-[9px] font-black uppercase text-slate-500 hover:bg-white shadow-sm transition-all">
+                                📥 Ver Adjunto
+                              </a>
+                            )}
                         </div>
                       );
                   })}
@@ -204,6 +210,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
             <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
                 <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">{tempPin.x < 0 ? '📝 CORRECCIONES GENERALES' : 'NUEVA CORRECCIÓN'}</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-5 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
+                {/* 7. SUBIDA DE ARCHIVOS ADJUNTOS */}
                 <div className="mb-6">
                   <label htmlFor="file-upload" className="text-[10px] block w-full py-3 bg-slate-50 border rounded-xl text-center font-black uppercase text-slate-500 cursor-pointer hover:bg-slate-100 transition-colors">
                     {fileToUpload ? fileToUpload.name : '📎 Adjuntar Imagen'}
