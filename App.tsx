@@ -68,4 +68,22 @@ export default function App() {
       />
       
       {/* RUTA DE CARPETA: Esencial para que el título cambie a "UNICO" */}
-      <Route
+      <Route 
+        path="/folder/:folderId" 
+        element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} 
+      />
+      
+      {/* Detalle del proyecto */}
+      <Route 
+        path="/project/:projectId" 
+        element={<ProjectDetail projects={projects} />} 
+      />
+      
+      {/* Vista de revisión de página */}
+      <Route 
+        path="/project/:projectId/version/:versionId/page/:pageId" 
+        element={<Revision projects={projects} />} 
+      />
+    </Routes>
+  );
+}
