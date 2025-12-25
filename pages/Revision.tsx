@@ -66,30 +66,14 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     if (data) setCommentsList(data);
   };
 
-  // --- FUNCIÓN PDF CORREGIDA ---
   const exportToPDF = () => {
     const doc = new jsPDF() as any;
     doc.setFont("helvetica", "bold");
     doc.text(`REPORTE DE CORRECCIONES`, 14, 20);
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.text(`Proyecto: ${project?.name}`, 14, 28);
-    doc.text(`Página: ${page?.pageNumber} | Versión: ${currentVer?.versionNumber}`, 14, 34);
-
-    const rows = commentsList.map((c, i) => [
-      c.x === null || c.x < 0 ? 'Gral' : i + 1,
-      c.content,
-      c.resolved ? 'RESOLVIDO' : 'PENDIENTE'
-    ]);
-
-    doc.autoTable({
-      startY: 40,
-      head: [['#', 'Comentario', 'Estado']],
-      body: rows,
-      theme: 'grid',
-      headStyles: { fillColor: [71, 85, 105] } // Color Slate-600
-    });
-
+    doc.text(`Proyecto: ${project?.name} | Pág: ${page?.pageNumber}`, 14, 28);
+    const rows = commentsList.map((c, i) => [c.x === null || c.x < 0 ? 'Gral' : i + 1, c.content, c.resolved ? 'RESOLVIDO' : 'PENDIENTE']);
+    doc.autoTable({ startY: 35, head: [['#', 'Comentario', 'Estado']], body: rows, headStyles: { fillColor: [71, 85, 105] } });
     doc.save(`Correcciones_${project?.name}_P${page?.pageNumber}.pdf`);
   };
 
@@ -106,20 +90,11 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
         const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(name);
         finalUrl = urlData.publicUrl;
       }
-      const { error } = await supabase.from('comments').insert([{
-        content: text, page_id: pageId, x: pinCoords.x, y: pinCoords.y, resolved: false, image_url: finalUrl
-      }]);
-      if (error) throw error;
+      await supabase.from('comments').insert([{ content: text, page_id: pageId, x: pinCoords.x, y: pinCoords.y, resolved: false, image_url: finalUrl }]);
       setTempPin(null);
       setFileToUpload(null);
       fetchComments();
     } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
-  };
-
-  const deleteComment = async (id: string) => {
-    if (!window.confirm("¿Borrar nota?")) return;
-    await supabase.from('comments').delete().eq('id', id);
-    fetchComments();
   };
 
   if (!project || !page) return <div className="p-10 text-center font-black text-slate-400">CARGANDO...</div>;
@@ -132,29 +107,19 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
          } : undefined}
          onMouseUp={() => setIsDraggingSlider(false)}
     >
-      <header className="h-20 bg-white border-b flex items-center justify-between px-6 shrink-0 z-50">
+      <header className="h-20 bg-white border-b flex items-center justify-between px-6 shrink-0 z-50 shadow-sm">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors uppercase text-[10px]">← Volver</button>
-            <div className="h-8 w-[1px] bg-slate-100 mx-2"></div>
             <h1 className="font-black text-slate-800 text-sm uppercase tracking-tight">{project.name} <span className="text-slate-300">/ P{page.pageNumber}</span></h1>
           </div>
-
           <div className="flex items-center gap-2">
-             {/* BOTÓN PDF DESTACADO */}
-             <button onClick={exportToPDF} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-slate-900 transition-all flex items-center gap-2">
-                📥 Descargar PDF
+             <button onClick={exportToPDF} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-slate-900">📥 PDF</button>
+             <button onClick={() => setTempPin({ x: -1, y: -1 })} className="bg-white border border-slate-200 text-slate-600 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase">💬 Gral</button>
+             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-7 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-amber-500 text-white animate-pulse' : 'bg-rose-600 text-white'}`}>
+                {isPinMode ? 'PINCHA IMAGEN' : 'MARCAR CORRECCIÓN'}
              </button>
-
-             <button onClick={() => setTempPin({ x: -1, y: -1 })} className="bg-white border border-slate-200 text-slate-600 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase hover:bg-slate-50 transition-all">
-                💬 General
-             </button>
-
-             <button onClick={() => setIsPinMode(!isPinMode)} className={`px-7 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-amber-500 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
-                {isPinMode ? 'PINCHA EN LA IMAGEN' : 'MARCAR CORRECCIÓN'}
-             </button>
-
              {otherVersions.length > 0 && (
-                <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-100'}`}>
+                <button onClick={() => setIsCompareMode(!isCompareMode)} className={`px-5 py-2.5 rounded-xl font-bold text-[10px] uppercase border transition-all ${isCompareMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600'}`}>
                     {isCompareMode ? 'Salir' : 'Comparar'}
                 </button>
              )}
@@ -162,8 +127,8 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black hover:scale-110 transition-all">←</button>}
-          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black hover:scale-110 transition-all">→</button>}
+          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
+          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
 
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
             {!isCompareMode ? (
@@ -172,18 +137,16 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                     const r = imageContainerRef.current.getBoundingClientRect();
                     setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
                     setIsPinMode(false);
-                }} style={{ transform: `scale(${scale})` }} className={`relative shadow-2xl border bg-white transition-all ${isPinMode ? 'cursor-crosshair ring-4 ring-rose-500/30' : 'cursor-default'}`}>
+                }} style={{ transform: `scale(${scale})` }} className={`relative shadow-2xl border bg-white ${isPinMode ? 'cursor-crosshair ring-4 ring-rose-500/30' : ''}`}>
                     <img src={page.imageUrl} className="max-h-[82vh] block select-none pointer-events-none" alt="" />
                     {commentsList.map((c, i) => {
                         if (c.x === null || c.x < 0) return null;
-                        return (
-                          <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
-                        );
+                        return <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>;
                     })}
                     {tempPin && tempPin.x >= 0 && <div className="absolute w-7 h-7 bg-amber-400 rounded-full animate-bounce -ml-3.5 -mt-3.5 border-2 border-white shadow-xl" style={{ left: `${tempPin.x}%`, top: `${tempPin.y}%` }}></div>}
                 </div>
             ) : (
-                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl" style={{ transform: `scale(${scale})` }}>
+                <div ref={sliderRef} className="relative max-h-[82vh] border bg-white shadow-2xl transition-transform" style={{ transform: `scale(${scale})` }}>
                      <img src={page.imageUrl} className="max-h-[82vh] pointer-events-none block" alt="" />
                      {compareImageUrl && (
                         <div className="absolute top-0 left-0 h-full overflow-hidden border-r-2 border-white pointer-events-none" style={{ width: `${sliderPosition}%` }}>
@@ -191,7 +154,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                         </div>
                      )}
                      <div className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-50 shadow-xl" style={{ left: `${sliderPosition}%` }} onMouseDown={() => setIsDraggingSlider(true)}>
-                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100">↔</div>
+                        <div className="absolute top-1/2 -mt-5 -ml-5 w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-800 font-black shadow-2xl border border-slate-100 transition-transform hover:scale-110">↔</div>
                      </div>
                 </div>
             )}
@@ -205,12 +168,10 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                       return (
                         <div key={c.id} className={`p-4 rounded-2xl border transition-all shadow-sm ${c.resolved ? 'bg-emerald-50 border-emerald-100' : isGeneral ? 'bg-blue-50 border-blue-100' : 'bg-white border-slate-100'}`}>
                             <div className="flex justify-between items-start mb-2">
-                                <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : isGeneral ? 'text-blue-600' : 'text-rose-600'}`}>
-                                    {isGeneral ? '💬' : i+1}
-                                </span>
+                                <span className={`w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black border-2 border-white shadow-sm ${c.resolved ? 'text-emerald-500' : isGeneral ? 'text-blue-600' : 'text-rose-600'}`}>{isGeneral ? '💬' : i+1}</span>
                                 <div className="flex gap-1">
                                     <button onClick={async () => { await supabase.from('comments').update({resolved: !c.resolved}).eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center font-bold">{c.resolved ? '✓' : '○'}</button>
-                                    <button onClick={() => deleteComment(c.id)} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center text-xs text-slate-400 hover:text-rose-600 transition-all font-black">✕</button>
+                                    <button onClick={async () => { await supabase.from('comments').delete().eq('id', c.id); fetchComments(); }} className="w-8 h-8 rounded-xl bg-white border flex items-center justify-center text-xs text-slate-400 hover:text-rose-600 transition-all font-black">✕</button>
                                 </div>
                             </div>
                             <p className={`text-sm font-bold leading-relaxed ${c.resolved ? 'text-emerald-700 opacity-60 line-through' : 'text-slate-700'}`}>{c.content}</p>
@@ -225,16 +186,12 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       {tempPin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm border text-center">
-                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">
-                    {tempPin.x < 0 ? '📝 COMENTARIO GENERAL' : 'NUEVA CORRECCIÓN'}
-                </h3>
+                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">{tempPin.x < 0 ? '📝 GRAL' : 'NUEVA'}</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
                 <div className="mb-6"><input type="file" onChange={(e) => setFileToUpload(e.target.files?.[0] || null)} className="text-[10px] block w-full border rounded-xl p-2 bg-slate-50" /></div>
                 <div className="flex gap-2">
                     <button onClick={() => { setTempPin(null); setFileToUpload(null); }} className="flex-1 py-4 font-black text-slate-400 text-[10px]">CANCELAR</button>
-                    <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
-                        {isSaving ? 'GUARDANDO...' : 'GUARDAR'}
-                    </button>
+                    <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>{isSaving ? 'GUARDANDO...' : 'GUARDAR'}</button>
                 </div>
             </div>
         </div>
