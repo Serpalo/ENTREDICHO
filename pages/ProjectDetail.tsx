@@ -67,12 +67,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-slate-600 font-bold uppercase text-[10px] tracking-widest transition-colors">← Volver</button>
-          <div className="flex flex-col">
-            <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none">{project.name}</h1>
-            <span className="text-rose-600 font-black text-[10px] mt-2 tracking-[0.2em]">
-              {currentVersion ? getCorrectionName(currentVersion.versionNumber) : ""}
-            </span>
-          </div>
+          <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none">{project.name}</h1>
         </div>
         <button onClick={handleUploadNewVersion} disabled={isUploading} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all">
           {isUploading ? 'Subiendo...' : '📂 Nueva Versión'}
@@ -80,6 +75,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+        {/* SELECTOR DE VERSIONES */}
         <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-200 flex items-center gap-3">
           {project.versions.map((v: any) => (
             <button
@@ -101,7 +97,8 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-white">
               <th className="px-8 py-5 text-left w-32">Vista</th>
               <th className="px-8 py-5 text-left">Página</th>
-              <th className="px-8 py-5 text-center">Estado {currentVersion ? `(${getCorrectionName(currentVersion.versionNumber)})` : ""}</th>
+              <th className="px-8 py-5 text-center">Estado</th>
+              <th className="px-8 py-5 text-center">Correcciones</th>
               <th className="px-8 py-5 text-right">Acción</th>
             </tr>
           </thead>
@@ -112,7 +109,6 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
               return (
                 <tr key={page.id} className="group hover:bg-slate-50/80 transition-all">
                   <td className="px-8 py-5">
-                    {/* AHORA LA IMAGEN TIENE EL CURSOR DE MANO Y TE LLEVA A LA PÁGINA */}
                     <div 
                       onClick={() => navigate(`/project/${project.id}/version/${currentVersion.id}/page/${page.id}`)}
                       className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:border-rose-400 hover:scale-105 transition-all duration-300"
@@ -123,6 +119,13 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
                   <td className="px-8 py-5">
                     <span className="font-black text-slate-800 uppercase text-sm tracking-tight">Página {page.pageNumber}</span>
                   </td>
+                  {/* COLUMNA ESTADO SEPARADA */}
+                  <td className="px-8 py-5 text-center">
+                    <span className="text-rose-600 font-black text-[10px] tracking-widest uppercase">
+                      {getCorrectionName(currentVersion.versionNumber)}
+                    </span>
+                  </td>
+                  {/* COLUMNA CORRECCIONES SEPARADA */}
                   <td className="px-8 py-5 text-center">
                     {stats.total === 0 ? (
                       <span className="text-slate-300 text-[9px] font-black uppercase tracking-widest italic">Sin notas</span>
@@ -130,7 +133,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
                       <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-emerald-100">✓ Revisado</span>
                     ) : (
                       <span className="bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100">
-                        {pending} Cambios pendientes
+                        {pending} Pendientes
                       </span>
                     )}
                   </td>
