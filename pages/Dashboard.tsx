@@ -10,11 +10,11 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  // CABECERA DINÁMICA: Busca el nombre de la carpeta actual
+  // Cabecera dinámica: Muestra "UNICO" o el nombre de la carpeta actual
   const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name : "MIS PROYECTOS";
 
-  // FILTRADO DE CONTENIDO
+  // Filtrado para evitar tarjetas duplicadas
   const uniqueIds = new Set();
   const currentProjects = projects.filter((p: any) => {
     const isCorrectFolder = folderId ? String(p.parentId) === String(folderId) : !p.parentId;
@@ -51,10 +51,19 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
       <div className="flex justify-between items-center mb-10 bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
         <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-800 italic">{pageTitle}</h1>
         <div className="flex gap-4">
-          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-white border-2 border-gray-100 rounded-2xl font-black text-[10px] uppercase tracking-widest">+ Carpeta</button>
-          <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-rose-100">SUBIR FOLLETO</button>
+          <button onClick={() => setShowNewFolder(true)} className="px-6 py-3 bg-white border-2 border-gray-100 rounded-2xl font-black text-[10px] uppercase">+ Carpeta</button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-100">
+            {isUploading ? 'Procesando...' : 'SUBIR FOLLETO'}
+          </button>
         </div>
       </div>
+
+      {showNewFolder && (
+        <div className="mb-8 p-6 bg-white rounded-[2rem] border-2 border-dashed flex gap-4 animate-in fade-in zoom-in">
+          <input autoFocus className="flex-1 bg-slate-50 p-4 rounded-xl font-bold border-2 focus:border-rose-600 outline-none" placeholder="Nombre carpeta..." value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateFolder()} />
+          <button onClick={handleCreateFolder} className="bg-slate-800 text-white px-8 rounded-xl font-black text-[10px] uppercase">Crear</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
         {currentFolders.map((f: any) => (
@@ -75,9 +84,13 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
               <div onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-5 rounded-[2.5rem] border-2 border-gray-100 cursor-pointer shadow-sm flex flex-col h-full">
                 <div className="aspect-[3/4] rounded-[2rem] overflow-hidden mb-4 bg-gray-50 border relative">
                   {latest?.pages?.[0]?.imageUrl && <img src={latest.pages[0].imageUrl} className="w-full h-full object-cover" />}
-                  <div className="absolute top-3 right-3 bg-black text-white px-2 py-1 rounded-lg text-[8px] font-black">V{latest?.versionNumber || 1}</div>
+                  <div className="absolute top-3 right-3 bg-black text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase">V{latest?.versionNumber || 1}</div>
                 </div>
                 <h3 className="font-black text-xs truncate uppercase px-2">{p.name}</h3>
+                <div className="flex items-center gap-2 px-2 mt-auto">
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{latest?.versionNumber || 1}ª CORRECCIÓN</span>
+                </div>
               </div>
             </div>
           );
@@ -87,4 +100,4 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   );
 };
 
-export default Dashboard; // EXPORTACIÓN POR DEFECTO CRÍTICA
+export default Dashboard; // Solución al error de Vercel
