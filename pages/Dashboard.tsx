@@ -31,6 +31,13 @@ const Dashboard: React.FC<any> = ({ projects, folders, setFolders }) => {
     }
   };
 
+  const getCorrectionName = (num: number) => {
+    if (num === 1) return "1ª CORRECCIÓN";
+    if (num === 2) return "2ª CORRECCIÓN";
+    if (num === 3) return "3ª CORRECCIÓN";
+    return `${num}ª CORRECCIÓN`;
+  };
+
   return (
     <div className="p-8 min-h-full bg-slate-50 font-sans">
       <input type="file" ref={fileInputRef} hidden multiple accept="image/*" onChange={handleFileUpload} />
@@ -52,42 +59,37 @@ const Dashboard: React.FC<any> = ({ projects, folders, setFolders }) => {
         ))}
 
         {currentProjects.map((p: any) => (
-          <div key={p.id} className="group bg-white p-5 rounded-[2.5rem] border-2 border-slate-100 hover:shadow-2xl transition-all flex flex-col h-full">
-            {/* Portada del proyecto (clic lleva al detalle general) */}
-            <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 rounded-[2rem] mb-6 overflow-hidden border border-slate-50 shadow-inner relative cursor-pointer">
-              {p.versions?.[0]?.pages?.[0]?.imageUrl ? (
-                <img src={p.versions[p.versions.length - 1].pages[0].imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px] uppercase italic">Sin previa</div>
-              )}
-            </div>
-
-            <h3 className="font-black text-sm truncate text-slate-800 uppercase px-2 mb-4 tracking-tighter">{p.name}</h3>
-            
-            {/* LISTA DE VERSIONES DISPONIBLES */}
-            <div className="flex flex-wrap gap-2 px-2 mt-auto">
-              {p.versions.map((v: any) => (
-                <button
-                  key={v.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Al pinchar en una versión específica, vamos al detalle de esa versión
-                    navigate(`/project/${p.id}`);
-                  }}
-                  className="bg-slate-100 hover:bg-slate-800 hover:text-white text-slate-500 px-3 py-1.5 rounded-lg text-[9px] font-black transition-all border border-transparent hover:border-slate-800"
-                >
+          /* MAPEAMOS CADA VERSIÓN PARA QUE SEA UNA CARPETA/TARJETA DIFERENTE */
+          p.versions.map((v: any) => (
+            <div 
+              key={`${p.id}-${v.versionNumber}`} 
+              onClick={() => navigate(`/project/${p.id}/version/${v.id}/page/${v.pages[0].id}`)}
+              className="group bg-white p-5 rounded-[2.5rem] border-2 border-slate-100 hover:shadow-2xl cursor-pointer transition-all hover:-translate-y-2 hover:border-rose-100"
+            >
+              <div className="aspect-[3/4] bg-slate-50 rounded-[2rem] mb-6 overflow-hidden border border-slate-50 shadow-inner relative">
+                {v.pages[0]?.imageUrl ? (
+                  <img src={v.pages[0].imageUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px] uppercase italic">Sin previa</div>
+                )}
+                {/* ETIQUETA FLOTANTE DE VERSIÓN */}
+                <div className="absolute top-4 right-4 bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">
                   V{v.versionNumber}
-                </button>
-              ))}
-            </div>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-2 px-2 mt-4 pt-4 border-t border-slate-50">
-              <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                {p.versions.length}ª CORRECCIÓN
-              </span>
+              <h3 className="font-black text-sm truncate text-slate-800 uppercase px-2 mb-2 tracking-tighter">
+                {p.name}
+              </h3>
+              
+              <div className="flex items-center gap-2 px-2">
+                <div className={`w-2 h-2 rounded-full ${v.versionNumber === p.versions.length ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  {getCorrectionName(v.versionNumber)}
+                </span>
+              </div>
             </div>
-          </div>
+          ))
         ))}
       </div>
     </div>
