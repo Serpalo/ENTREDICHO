@@ -28,12 +28,20 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
     fetchStats();
   }, [project]);
 
-  if (!project) return <div className="p-8 font-black text-slate-400 italic animate-pulse tracking-widest uppercase text-xs">Sincronizando...</div>;
+  if (!project) return <div className="p-8 font-black text-slate-400 italic uppercase text-xs">Sincronizando...</div>;
 
   const sortedVersions = [...project.versions].sort((a, b) => b.versionNumber - a.versionNumber);
   const currentVersion = activeVersionNum 
     ? project.versions.find((v: any) => v.versionNumber === activeVersionNum) 
     : sortedVersions[0];
+
+  // Lógica para el nombre de la corrección según el número de versión
+  const getCorrectionName = (num: number) => {
+    if (num === 1) return "1ª CORRECCIÓN";
+    if (num === 2) return "2ª CORRECCIÓN";
+    if (num === 3) return "3ª CORRECCIÓN";
+    return `${num}ª CORRECCIÓN`;
+  };
 
   const handleUploadNewVersion = async () => {
     const input = document.createElement('input');
@@ -60,15 +68,19 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-slate-600 font-bold uppercase text-[10px] tracking-widest transition-colors">← Volver</button>
-          <h1 className="text-4xl font-black text-slate-800 tracking-tight">{project.name}</h1>
+          <div className="flex flex-col">
+            <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none">{project.name}</h1>
+            <span className="text-rose-600 font-black text-[10px] mt-2 tracking-[0.2em]">
+              {currentVersion ? getCorrectionName(currentVersion.versionNumber) : ""}
+            </span>
+          </div>
         </div>
-        <button onClick={handleUploadNewVersion} disabled={isUploading} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all flex items-center gap-2">
+        <button onClick={handleUploadNewVersion} disabled={isUploading} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all">
           {isUploading ? 'Subiendo...' : '📂 Nueva Versión'}
         </button>
       </div>
 
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-        {/* SELECTOR DE VERSIONES */}
         <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-200 flex items-center gap-3">
           {project.versions.map((v: any) => (
             <button
@@ -80,17 +92,17 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
                 : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
               }`}
             >
-              Versión {v.versionNumber}
+              V{v.versionNumber}
             </button>
           ))}
         </div>
 
-        <table className="w-full border-collapse">
+        <table className="w-full">
           <thead>
             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-white">
               <th className="px-8 py-5 text-left w-32">Vista</th>
               <th className="px-8 py-5 text-left">Página</th>
-              <th className="px-8 py-5 text-center">Correcciones</th>
+              <th className="px-8 py-5 text-center">Estado {currentVersion ? `(${getCorrectionName(currentVersion.versionNumber)})` : ""}</th>
               <th className="px-8 py-5 text-right">Acción</th>
             </tr>
           </thead>
@@ -101,7 +113,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
               return (
                 <tr key={page.id} className="group hover:bg-slate-50/80 transition-all">
                   <td className="px-8 py-5">
-                    <div className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm group-hover:shadow-md transition-all">
+                    <div className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm">
                       <img src={page.imageUrl} className="w-full h-full object-cover" alt="" />
                     </div>
                   </td>
@@ -112,10 +124,10 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
                     {stats.total === 0 ? (
                       <span className="text-slate-300 text-[9px] font-black uppercase tracking-widest italic">Sin notas</span>
                     ) : pending === 0 ? (
-                      <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-emerald-100">✓ Completado</span>
+                      <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-emerald-100">✓ Revisado</span>
                     ) : (
-                      <span className="bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100 shadow-sm animate-pulse">
-                        {pending} Pendientes
+                      <span className="bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100">
+                        {pending} Cambios pendientes
                       </span>
                     )}
                   </td>
@@ -124,7 +136,7 @@ const ProjectDetail: React.FC<any> = ({ projects }) => {
                       onClick={() => navigate(`/project/${project.id}/version/${currentVersion.id}/page/${page.id}`)}
                       className="text-rose-600 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-1 transition-transform inline-block"
                     >
-                      Revisar →
+                      Entrar →
                     </button>
                   </td>
                 </tr>
