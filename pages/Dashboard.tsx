@@ -16,8 +16,9 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const { folderId } = useParams<{ folderId: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Por defecto en cuadrícula
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState(""); // Para ver el progreso
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
@@ -38,57 +39,71 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
   const handleDeleteFolder = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm("⚠️ ¿BORRAR CARPETA Y SU CONTENIDO?")) return;
-    
     const { error } = await supabase.from('folders').delete().eq('id', id);
-    if (error) {
-        alert("Error al borrar: " + error.message);
-    } else {
-        setFolders(folders.filter(f => f.id !== id));
-    }
+    if (error) alert("Error al borrar: " + error.message);
+    else setFolders(folders.filter(f => f.id !== id));
   };
 
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm("⚠️ ¿BORRAR PROYECTO?")) return;
-
     const { error } = await supabase.from('projects').delete().eq('id', id);
-    if (error) {
-        alert("Error: " + error.message);
-    } else {
-        setProjects(projects.filter(p => p.id !== id));
-    }
+    if (error) alert("Error: " + error.message);
+    else setProjects(projects.filter(p => p.id !== id));
   };
 
+  // --- NUEVA LÓGICA DE SUBIDA MÚLTIPLE ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
+    
     setIsUploading(true);
-    const file = e.target.files[0];
+    setUploadStatus("Preparando...");
+
+    // 1. Ordenamos los archivos por nombre para que las páginas salgan en orden (pag1, pag2...)
+    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const firstFile = files[0];
 
     try {
-      const fileName = `cover-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
-      if (uploadError) throw new Error("Fallo subida imagen");
-
-      const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(fileName);
-      const projectName = file.name.split('.')[0];
-
+      // 2. Creamos EL Proyecto (Uno solo para todas las imágenes)
+      const projectName = firstFile.name.split('.')[0].replace(/[-_]page\d+/i, ''); // Intentamos limpiar el nombre
+      
       const { data: projData, error: projError } = await supabase.from('projects').insert([{
         title: projectName,
         status: '1ª corrección',
         parent_id: folderId || null
       }]).select();
 
-      if (projError) throw new Error("Fallo base de datos");
+      if (projError) throw new Error("Fallo al crear proyecto: " + projError.message);
+      const newProjectId = projData[0].id;
 
-      const newProject = projData[0];
-      await supabase.from('pages').insert([{
-        project_id: newProject.id, image_url: urlData.publicUrl, page_number: 1, version: 1, status: '1ª corrección'
-      }]);
+      // 3. Subimos cada imagen como una página del mismo proyecto
+      for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setUploadStatus(`Subiendo ${i + 1} de ${files.length}...`);
 
+          const fileName = `page-${Date.now()}-${i}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          
+          // Subir imagen
+          const { error: uploadError } = await supabase.storage.from('brochures').upload(fileName, file);
+          if (uploadError) throw new Error(`Fallo en imagen ${i+1}: ${uploadError.message}`);
+
+          const { data: urlData } = supabase.storage.from('brochures').getPublicUrl(fileName);
+
+          // Crear página
+          await supabase.from('pages').insert([{
+            project_id: newProjectId,
+            image_url: urlData.publicUrl,
+            page_number: i + 1, // Página 1, 2, 3...
+            version: 1,
+            status: '1ª corrección'
+          }]);
+      }
+
+      setUploadStatus("¡Listo!");
       setTimeout(() => window.location.reload(), 500);
 
     } catch (error: any) {
-      alert("Error: " + error.message);
+      alert("🛑 ERROR: " + error.message);
       setIsUploading(false);
     }
   };
@@ -97,7 +112,8 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
 
   return (
     <div className="p-8 min-h-full bg-slate-50 font-sans">
-      <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={handleFileUpload} />
+      {/* AÑADIDO 'multiple' AL INPUT */}
+      <input type="file" ref={fileInputRef} hidden multiple accept="image/*" onChange={handleFileUpload} />
       
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -122,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                 </button>
             )}
             <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="px-6 py-2 bg-rose-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-rose-200 hover:bg-rose-700 hover:-translate-y-0.5 transition flex items-center gap-2">
-                {isUploading ? 'Subiendo...' : 'Subir Folleto'}
+                {isUploading ? uploadStatus : 'Subir Folleto'}
             </button>
         </div>
       </div>
@@ -133,6 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
         </div>
       ) : (
         <>
+            {/* VISTA DE LISTA */}
             {viewMode === 'list' && (
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                     <table className="w-full text-left">
@@ -144,7 +161,6 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                                 <tr key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="hover:bg-slate-50 cursor-pointer group">
                                     <td className="p-4 flex items-center gap-3"><span className="text-2xl text-amber-400">📁</span> <span className="font-bold text-slate-700">{f.name}</span></td>
                                     <td className="p-4 text-right">
-                                        {/* BOTÓN ROJO SIEMPRE VISIBLE */}
                                         <button onClick={(e) => handleDeleteFolder(f.id, e)} className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-600 hover:text-white font-bold text-xs mr-2">BORRAR</button>
                                         <span className="text-slate-300 text-xs">Abrir &rarr;</span>
                                     </td>
@@ -154,6 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                                 <tr key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="hover:bg-slate-50 cursor-pointer">
                                     <td className="p-4 flex items-center gap-3">
                                         <span className="font-bold text-slate-800">{getProjectName(p)}</span>
+                                        <span className="text-xs text-slate-400 ml-2">({p.versions?.[0]?.pages?.length || 0} págs)</span>
                                     </td>
                                     <td className="p-4 text-right">
                                          <button onClick={(e) => handleDeleteProject(p.id, e)} className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-600 hover:text-white font-bold text-xs mr-2">BORRAR</button>
@@ -165,34 +182,24 @@ const Dashboard: React.FC<DashboardProps> = ({ projects, setProjects, folders, s
                 </div>
             )}
 
+            {/* VISTA DE CUADRÍCULA */}
             {viewMode === 'grid' && (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                     {currentFolders.map(f => (
                         <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="relative group bg-slate-100 hover:bg-white border border-transparent hover:border-slate-200 p-6 rounded-2xl cursor-pointer transition-all hover:shadow-lg flex flex-col items-center gap-4">
-                            {/* BOTÓN ROJO FLOTANTE SIEMPRE VISIBLE */}
-                            <button 
-                                onClick={(e) => handleDeleteFolder(f.id, e)} 
-                                className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10"
-                                title="Borrar Carpeta"
-                            >
-                                🗑️
-                            </button>
+                            <button onClick={(e) => handleDeleteFolder(f.id, e)} className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10" title="Borrar Carpeta">🗑️</button>
                             <div className="text-4xl">📁</div>
                             <h3 className="font-bold text-slate-700 text-sm">{f.name}</h3>
                         </div>
                     ))}
                     {currentProjects.map(p => (
                         <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="relative group bg-white p-4 rounded-2xl border border-slate-100 hover:border-rose-200 cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1">
-                            {/* BOTÓN ROJO FLOTANTE SIEMPRE VISIBLE */}
-                            <button 
-                                onClick={(e) => handleDeleteProject(p.id, e)} 
-                                className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10"
-                                title="Borrar Proyecto"
-                            >
-                                🗑️
-                            </button>
+                            <button onClick={(e) => handleDeleteProject(p.id, e)} className="absolute top-2 right-2 bg-white text-red-500 hover:bg-red-600 hover:text-white w-8 h-8 rounded-full shadow-md flex items-center justify-center font-bold z-10" title="Borrar Proyecto">🗑️</button>
                             <div className="aspect-[3/4] bg-slate-50 rounded-xl mb-4 overflow-hidden relative flex items-center justify-center bg-slate-100 text-slate-300 font-bold text-2xl">
                                 {p.versions?.[0]?.pages?.[0]?.imageUrl ? <img src={p.versions[0].pages[0].imageUrl} className="w-full h-full object-cover" /> : "A"}
+                                <div className="absolute bottom-0 right-0 bg-slate-800 text-white text-[10px] px-2 py-1 rounded-tl-lg font-bold">
+                                    {p.versions?.[0]?.pages?.length || 0} págs
+                                </div>
                             </div>
                             <h3 className="font-bold text-slate-800 text-sm truncate">{getProjectName(p)}</h3>
                         </div>
