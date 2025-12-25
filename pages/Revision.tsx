@@ -7,7 +7,6 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const { projectId, versionId, pageId } = useParams();
   const navigate = useNavigate();
   const imageContainerRef = useRef<HTMLDivElement>(null);
-  const sliderRef = useRef<HTMLDivElement>(null);
   
   const [scale, setScale] = useState(1);
   const [showResolved, setShowResolved] = useState(true);
@@ -17,24 +16,41 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
-  const [isCompareMode, setIsCompareMode] = useState(false);
-  const [sliderPosition, setSliderPosition] = useState(50);
-  const [compareVersionId, setCompareVersionId] = useState("");
-  const [isDraggingSlider, setIsDraggingSlider] = useState(false);
-
+  // --- LÓGICA DE BÚSQUEDA ROBUSTA PARA EVITAR PANTALLA EN BLANCO ---
   const project = projects.find(p => p.id === projectId);
-  const page = project?.versions.find(v => v.id === versionId)?.pages.find(p => p.id === pageId);
-  const allPages = project?.versions.find(v => v.id === versionId)?.pages || [];
+  
+  // Buscamos la página recorriendo todas las versiones si es necesario
+  let page: any = null;
+  let currentVer: any = null;
+  let allPagesInVersion: any[] = [];
 
-  // --- ESCUCHA EN TIEMPO REAL ---
+  if (project) {
+    for (const v of project.versions) {
+      const found = v.pages.find(p => p.id === pageId);
+      if (found) {
+        page = found;
+        currentVer = v;
+        allPagesInVersion = v.pages;
+        break;
+      }
+    }
+  }
+
+  const currentIndex = allPagesInVersion.findIndex(p => p.id === pageId);
+  const prevPage = allPagesInVersion[currentIndex - 1];
+  const nextPage = allPagesInVersion[currentIndex + 1];
+  const otherVersions = project ? project.versions.filter(v => v.versionNumber !== currentVer?.versionNumber) : [];
+
   useEffect(() => {
-    if (!pageId) return;
-    fetchComments();
-    const channel = supabase.channel(`live-comments-${pageId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
-      () => fetchComments())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    if (pageId) {
+      fetchComments();
+      // Suscripción en tiempo real para colaboración
+      const channel = supabase.channel(`room-${pageId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${pageId}` }, 
+        () => fetchComments())
+        .subscribe();
+      return () => { supabase.removeChannel(channel); };
+    }
   }, [pageId]);
 
   const fetchComments = async () => {
@@ -42,44 +58,25 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     if (data) setCommentsList(data);
   };
 
-  // --- FUNCIÓN DE GUARDADO REFORZADA ---
   const handleSave = async () => {
     const text = (document.getElementById('note-text') as HTMLTextAreaElement)?.value;
     if (!text || !tempPin || !pageId) return;
-
     setIsSaving(true);
     let finalUrl = null;
-
     try {
       if (fileToUpload) {
         const name = `ref-${Date.now()}-${fileToUpload.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        const { error: upErr } = await supabase.storage.from('brochures').upload(name, fileToUpload);
-        if (upErr) throw upErr;
+        await supabase.storage.from('brochures').upload(name, fileToUpload);
         finalUrl = supabase.storage.from('brochures').getPublicUrl(name).data.publicUrl;
       }
-
-      const { data: newComment, error: insErr } = await supabase.from('comments').insert([{
-        content: text,
-        page_id: pageId,
-        x: tempPin.x,
-        y: tempPin.y,
-        resolved: false,
-        image_url: finalUrl
-      }]).select();
-
-      if (insErr) throw insErr;
-
-      // Actualización forzosa de la interfaz
-      if (newComment) {
-        setCommentsList(prev => [newComment[0], ...prev]);
-        setTempPin(null);
-        setFileToUpload(null);
-      }
-    } catch (err: any) {
-      alert("Error al guardar: " + err.message);
-    } finally {
-      setIsSaving(false);
-    }
+      const { error } = await supabase.from('comments').insert([{
+        content: text, page_id: pageId, x: tempPin.x, y: tempPin.y, resolved: false, image_url: finalUrl
+      }]);
+      if (error) throw error;
+      setTempPin(null);
+      setFileToUpload(null);
+      fetchComments();
+    } catch (err: any) { alert("Error: " + err.message); } finally { setIsSaving(false); }
   };
 
   const toggleResolved = async (id: string, currentStatus: boolean) => {
@@ -87,20 +84,21 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
     fetchComments();
   };
 
-  if (!page) return <div className="p-10 bg-slate-50 h-screen flex items-center justify-center font-bold">Cargando...</div>;
+  if (!project || !page) {
+    return (
+      <div className="h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600"></div>
+        <p className="font-black text-slate-400 uppercase text-xs tracking-widest">Sincronizando datos...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden"
-         onMouseMove={isDraggingSlider ? (e) => {
-            const rect = sliderRef.current?.getBoundingClientRect();
-            if (rect) setSliderPosition(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
-         } : undefined}
-         onMouseUp={() => setIsDraggingSlider(false)}
-    >
+    <div className="h-screen bg-slate-100 flex flex-col font-sans overflow-hidden">
       <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 shadow-sm z-50">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600">← VOLVER</button>
-            <h1 className="font-black text-slate-800 tracking-tight">{project?.name} <span className="text-slate-300 font-medium">/ Pág {page.pageNumber}</span></h1>
+            <button onClick={() => navigate(-1)} className="text-slate-400 font-bold hover:text-rose-600 transition-colors">← VOLVER</button>
+            <h1 className="font-black text-slate-800 tracking-tight">{project.name} <span className="text-slate-300 font-medium">/ Pág {page.pageNumber}</span></h1>
           </div>
           <div className="flex items-center gap-4">
              <button onClick={() => setIsPinMode(!isPinMode)} className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all ${isPinMode ? 'bg-slate-800 text-white animate-pulse' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>
@@ -110,8 +108,8 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-          {allPages[allPages.findIndex(p => p.id === pageId) - 1] && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${allPages[allPages.findIndex(p => p.id === pageId) - 1].id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
-          {allPages[allPages.findIndex(p => p.id === pageId) + 1] && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${allPages[allPages.findIndex(p => p.id === pageId) + 1].id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
+          {prevPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${prevPage.id}`)} className="absolute left-6 top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">←</button>}
+          {nextPage && <button onClick={() => navigate(`/project/${projectId}/version/${versionId}/page/${nextPage.id}`)} className="absolute right-[340px] top-1/2 -translate-y-1/2 z-40 w-12 h-12 bg-white/90 rounded-full shadow-2xl border flex items-center justify-center font-black">→</button>}
 
           <div className="flex-1 relative flex items-center justify-center bg-slate-50 overflow-hidden" onWheel={(e) => { if(e.ctrlKey) setScale(s => Math.min(Math.max(s + e.deltaY * -0.01, 0.5), 4)) }}>
               <div ref={imageContainerRef} onClick={(e) => {
@@ -119,7 +117,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                   const r = imageContainerRef.current.getBoundingClientRect();
                   setTempPin({ x: ((e.clientX - r.left)/r.width)*100, y: ((e.clientY - r.top)/r.height)*100 });
                   setIsPinMode(false);
-              }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl border bg-white cursor-crosshair">
+              }} style={{ transform: `scale(${scale})` }} className="relative shadow-2xl border bg-white cursor-crosshair transition-transform duration-150">
                   <img src={page.imageUrl} className="max-h-[82vh] block select-none" alt="" />
                   {commentsList.map((c, i) => (
                       <div key={c.id} className={`absolute w-7 h-7 rounded-full flex items-center justify-center text-xs font-black -ml-3.5 -mt-3.5 border-2 border-white shadow-lg ${c.resolved ? 'bg-emerald-500' : 'bg-rose-600'} text-white`} style={{ left: `${c.x}%`, top: `${c.y}%` }}>{i+1}</div>
@@ -150,7 +148,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
       {tempPin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl text-slate-900 w-full max-w-sm border text-center">
-                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Detalle de la Corrección</h3>
+                <h3 className="font-black text-[10px] uppercase tracking-widest mb-6 text-slate-400">Nueva Corrección</h3>
                 <textarea autoFocus id="note-text" className="w-full border-2 bg-slate-50 rounded-2xl p-4 mb-4 h-32 outline-none focus:border-rose-600 font-bold text-slate-700 resize-none shadow-inner" placeholder="Escribe aquí..."></textarea>
                 <div className="mb-6">
                     <input type="file" onChange={(e) => setFileToUpload(e.target.files?.[0] || null)} className="text-[10px] block w-full border rounded-xl p-2 bg-slate-50" />
@@ -158,7 +156,7 @@ const Revision: React.FC<{ projects: Project[] }> = ({ projects }) => {
                 <div className="flex gap-2">
                     <button onClick={() => { setTempPin(null); setFileToUpload(null); }} className="flex-1 py-4 font-black text-slate-400 text-[10px]">CANCELAR</button>
                     <button onClick={handleSave} disabled={isSaving} className={`flex-1 py-4 rounded-2xl font-black text-[10px] shadow-xl transition-all ${isSaving ? 'bg-slate-400' : 'bg-rose-600 text-white hover:bg-rose-700 uppercase'}`}>
-                        {isSaving ? 'GUARDANDO...' : 'GUARDAR CORRECCIÓN'}
+                        {isSaving ? 'SINCRONIZANDO...' : 'GUARDAR CORRECCIÓN'}
                     </button>
                 </div>
             </div>
