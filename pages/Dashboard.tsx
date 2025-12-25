@@ -6,11 +6,10 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  // Título dinámico: Busca el nombre real de la carpeta actual
+  // Título dinámico para que aparezca "UNICO"
   const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name : "MIS PROYECTOS";
 
@@ -79,4 +78,4 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   );
 };
 
-export default Dashboard; // ESTA LÍNEA ES LA QUE ARREGLA EL ERROR DE TUS CAPTURAS
+export default Dashboard; // IMPRESCINDIBLE PARA VERCEL
