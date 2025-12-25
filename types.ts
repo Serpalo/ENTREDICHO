@@ -1,7 +1,7 @@
 export interface Comment {
   id: string;
   content: string;
-  created_at: string; // Coincide con la DB
+  created_at: string;
   page_id: string;
   x: number;
   y: number;
@@ -14,9 +14,8 @@ export interface Page {
   imageUrl: string;
   pageNumber: number;
   version: number;
-  status: '1ª corrección' | '2ª corrección' | '3ª corrección' | '4ª corrección' | '5ª corrección' | 'Imprenta';
+  status: string; // Simplificado para aceptar cualquier string de la BD
   comments: Comment[];
-  // approvals eliminados para simplificar, usamos status
 }
 
 export interface Version {
@@ -29,10 +28,10 @@ export interface Project {
   id: string;
   name: string;
   type: 'project';
-  parentId?: string; // Para carpetas
+  parentId?: string;
   status: 'active' | 'completed' | 'archived';
   versions: Version[];
-  review_deadline?: string | null; // <--- ¡AQUÍ ESTÁ LA CLAVE! 📅
+  review_deadline?: string | null; // <--- ESTA ES LA CLAVE QUE FALTABA
 }
 
 export interface Folder {
