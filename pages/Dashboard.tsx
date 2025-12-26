@@ -18,18 +18,15 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     folderId ? String(p.parent_id) === String(folderId) : !p.parent_id
   );
 
-  const currentFolder = safeFolders.find((f: any) => String(f.id) === String(folderId));
-  const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const cleanName = `${Math.random().toString(36).substring(2)}-${file.name}`;
+      // Simplificamos el nombre para evitar el error "Invalid key"
+      const cleanName = `${Date.now()}-${i}.jpg`;
 
-      // 1. Subida al Storage (Bucket en Mayúsculas)
       const { error: uploadError } = await supabase.storage
         .from('FOLLETOS')
         .upload(cleanName, file);
@@ -39,12 +36,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         continue;
       }
 
-      // 2. Obtener la URL Pública
       const { data: { publicUrl } } = supabase.storage
         .from('FOLLETOS')
         .getPublicUrl(cleanName);
 
-      // 3. Registro en la tabla 'projects'
       await supabase.from('projects').insert([{ 
         name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null,
@@ -53,7 +48,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     }
 
     if (onRefresh) await onRefresh();
-    alert("Archivos subidos con éxito");
+    alert("Subida completada");
   };
 
   const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
@@ -65,12 +60,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         return (
           <div key={f.id} className="flex flex-col">
             <div onClick={() => navigate(`/folder/${f.id}`)}
-              className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-all ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
               style={{ paddingLeft: `${level * 12 + 8}px` }}>
-              {hasChildren && (
-                <span onClick={(e) => toggleFolder(f.id, e)} className="text-[8px] transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-              )}
-              <span className="text-sm font-medium">📁 {f.name}</span>
+              {hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[8px]">{isOpen ? '▼' : '▶'}</span>}
+              <span className="text-sm">📁 {f.name}</span>
             </div>
             {hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
           </div>
@@ -81,32 +74,33 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
-        <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-10 w-fit object-contain" />
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
-          <div className="mt-6 text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Estructura</div>
+          <div className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Estructura</div>
           {renderFolderTree(null)}
         </nav>
       </div>
 
       <div className="flex-1 p-10">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
-          <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter">{pageTitle}</h1>
+          <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter">
+            {folderId ? safeFolders.find(f => String(f.id) === String(folderId))?.name.toUpperCase() : "MIS PROYECTOS"}
+          </h1>
           <div className="flex gap-4">
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
-            <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg">
+            <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">
               {currentItems.length > 0 ? "SUBIR NUEVA VERSIÓN" : "SUBIR FOLLETOS"}
             </button>
           </div>
         </div>
 
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
                 <th className="px-10 py-6">Vista</th>
                 <th className="px-10 py-6">Página</th>
-                <th className="px-10 py-6 text-center">Correcciones</th>
                 <th className="px-10 py-6 text-right">Acción</th>
               </tr>
             </thead>
@@ -118,14 +112,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                       {p.image_url ? (
                         <img src={p.image_url} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-300 font-bold tracking-tighter italic">IMG</div>
+                        <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold italic">IMG</div>
                       )}
                     </div>
                   </td>
                   <td className="px-10 py-6 italic font-black text-slate-700 text-lg uppercase tracking-tighter">{p.name}</td>
-                  <td className="px-10 py-6 text-center">
-                    <span className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-400 tracking-tight">Sin Notas</span>
-                  </td>
                   <td className="px-10 py-6 text-right">
                     <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest hover:mr-1 transition-all">Revisar →</button>
                   </td>
