@@ -53,12 +53,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
         </div>
         <nav className="flex flex-col gap-4">
-          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600">
+          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600 transition-colors">
             <span>🏠</span> Inicio
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
           {safeFolders.filter(f => !f.parent_id).map(f => (
-            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600 transition-colors">
+            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600 transition-colors text-ellipsis overflow-hidden">
               <span>📁</span> {f.name}
             </div>
           ))}
@@ -76,7 +76,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <button 
               onClick={() => fileInputRef.current?.click()} 
               className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]"
-              style={{ pointerEvents: 'auto' }}
             >
               SUBIR FOLLETO
             </button>
@@ -87,16 +86,21 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           {safeFolders
             .filter((f: any) => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id)
             .map((f: any) => (
-              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all">
+              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all hover:-translate-y-1">
                 <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10">✕</button>
                 <div className="text-6xl mb-4 opacity-80">📁</div>
                 <span className="font-black text-[11px] uppercase text-slate-500 tracking-widest text-center">{f.name}</span>
               </div>
             ))}
+
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
-              <div key={p.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center">
+              <div 
+                key={p.id} 
+                onClick={() => navigate(`/project/${p.id}`)} 
+                className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer hover:-translate-y-1"
+              >
                 <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
                 <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
               </div>
