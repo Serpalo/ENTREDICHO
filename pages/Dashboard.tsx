@@ -28,7 +28,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
-  // AUTO-SELECCIÓN DE LA ÚLTIMA VERSIÓN
+  // AUTO-SELECCIÓN ÚLTIMA VERSIÓN
   useEffect(() => {
     if (availableVersions.length > 0) {
       const maxVersion = availableVersions[availableVersions.length - 1];
@@ -76,7 +76,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
-  // --- FUNCIÓN DE SUBIDA MEJORADA (SOLUCIÓN AL ERROR) ---
+  // --- FUNCIÓN DE SUBIDA "NUCLEAR" (A PRUEBA DE FALLOS) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -87,32 +87,32 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // LIMPIEZA DE NOMBRE: Quitamos tildes y caracteres raros
-      const sanitizedFileName = file.name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "") // Elimina tildes (Página -> Pagina)
-        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Reemplaza símbolos raros por guion bajo
-
-      const paddedIndex = String(i + 1).padStart(3, '0');
+      // 1. OBTENEMOS LA EXTENSIÓN DEL ARCHIVO (ej: .jpg)
+      const fileExt = file.name.split('.').pop();
       
-      // Usamos el nombre limpio para el almacenamiento
-      const cleanName = `${uploadTimestamp}-${paddedIndex}-${sanitizedFileName}`;
+      // 2. CREAMOS UN NOMBRE "DIGITAL" SEGURO (Solo números y letras básicas)
+      // Ejemplo interno: 17099922-001.jpg
+      // Esto evita CUALQUIER error de "Invalid Key" por tildes, ñ o espacios.
+      const paddedIndex = String(i + 1).padStart(3, '0');
+      const safeStorageName = `${uploadTimestamp}-${paddedIndex}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
+      // 3. SUBIMOS EL ARCHIVO CON EL NOMBRE SEGURO
+      const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
       
       if (uploadError) { 
         alert("Error al subir archivo: " + uploadError.message); 
         continue; 
       }
       
-      const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
+      const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
+      // 4. GUARDAMOS EN LA BASE DE DATOS EL NOMBRE ORIGINAL BONITO
       await supabase.from('projects').insert([{ 
-        name: file.name, // Guardamos el nombre original para mostrarlo bonito
+        name: file.name, // ¡AQUÍ SÍ GUARDAMOS EL NOMBRE ORIGINAL CON TILDES!
         parent_id: folderId ? parseInt(folderId) : null, 
         image_url: publicUrlData.publicUrl, 
         version: nextVersion, 
-        storage_name: cleanName 
+        storage_name: safeStorageName 
       }]);
     }
     
