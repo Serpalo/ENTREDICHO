@@ -16,7 +16,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
-  // Filtros de items y versiones
+  // Filtros de items y versiones (Sigue igual que antes)
   const allItemsInFolder = useMemo(() => 
     projects
       .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
@@ -62,7 +62,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   // --- NUEVO: MARCAR COMO HECHA/PENDIENTE DESDE LA LISTA ---
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
-    // 1. Actualización optimista (para que se vea instantáneo)
+    // 1. Actualización optimista (para que cambie de color instantáneo)
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
     
     // 2. Actualización real en base de datos
@@ -232,7 +232,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     <th className="px-4 py-6 w-1/4">Página</th>
                     
                     {/* NUEVA COLUMNA DE CORRECCIONES */}
-                    <th className="px-4 py-6">Correcciones Pendientes</th>
+                    <th className="px-4 py-6">Correcciones</th>
                     
                     <th className="px-8 py-6 text-right w-40">Acción</th>
                   </tr>
@@ -241,6 +241,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                   {currentItems.map((p: any) => {
                     // Filtramos los comentarios de ESTE proyecto
                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                    const pendingCount = myComments.filter(c => !c.resolved).length;
                     
                     return (
                       <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
@@ -262,10 +263,21 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                         {/* 3. COLUMNA DE CORRECCIONES (NUEVO) */}
                         <td className="px-4 py-6 align-top">
                           <div className="flex flex-col gap-2">
-                            {myComments.length === 0 ? (
-                              <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
+                             {/* CABECERA: Contador de pendientes */}
+                            {pendingCount > 0 ? (
+                              <div className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">
+                                ⚠️ {pendingCount} PENDIENTES
+                              </div>
+                            ) : myComments.length > 0 ? (
+                              <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">
+                                ✓ TODO HECHO
+                              </div>
                             ) : (
-                              myComments.map(c => (
+                              <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
+                            )}
+
+                            {/* LISTA DE NOTAS */}
+                            {myComments.map(c => (
                                 <div 
                                   key={c.id} 
                                   className={`flex items-start gap-3 p-2 rounded-lg border transition-all ${
@@ -292,7 +304,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                   </span>
                                 </div>
                               ))
-                            )}
+                            }
                           </div>
                         </td>
 
@@ -310,10 +322,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </table>
             </div>
           ) : (
-            // VISTA GRID (Se mantiene igual, pero podríamos añadir indicador)
+            // VISTA GRID (Con aviso de pendientes)
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
               {currentItems.map((p: any) => {
-                 const pendingCount = comments.filter(c => String(c.page_id) === String(p.id) && !c.resolved).length;
+                 const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                 const pendingCount = myComments.filter(c => !c.resolved).length;
+                 
                  return (
                   <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                     <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer">
@@ -322,12 +336,19 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>
                       )}
+                      
                       {/* Badge de correcciones pendientes en GRID */}
                       {pendingCount > 0 && (
                         <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse">
                           {pendingCount} CORRECCIONES
                         </div>
                       )}
+                      {pendingCount === 0 && myComments.length > 0 && (
+                        <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10">
+                          ✓ COMPLETADO
+                        </div>
+                      )}
+
                       <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm font-bold">✕</button>
                     </div>
                     <div className="p-6 flex flex-col gap-3">
