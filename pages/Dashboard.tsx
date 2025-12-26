@@ -13,17 +13,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const currentFolder = safeFolders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
-  // --- CARPETAS ---
-  const handleCreateFolder = async () => {
-    const name = prompt("Nombre de la nueva carpeta:");
-    if (!name) return;
-    const { error } = await supabase
-      .from('folders')
-      .insert([{ name, parent_id: folderId ? parseInt(folderId) : null }]);
-    if (error) alert("Error: " + error.message);
-    else if (onRefresh) await onRefresh();
-  };
-
+  // --- BORRAR CARPETA ---
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar esta carpeta?")) {
@@ -33,35 +23,44 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     }
   };
 
-  // --- SUBIDA MÚLTIPLE (CORREGIDO) ---
+  // --- BORRAR FOLLETO (NUEVO) ---
+  const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation(); // Evita que se abra el folleto al borrarlo
+    if (window.confirm("¿Estás seguro de que quieres eliminar este folleto?")) {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        alert("No se pudo eliminar: " + error.message);
+      } else {
+        if (onRefresh) await onRefresh();
+      }
+    }
+  };
+
+  // --- SUBIDA MÚLTIPLE ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    // Procesamos cada archivo seleccionado
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const { error } = await supabase
-        .from('projects')
-        .insert([{ 
-          name: file.name, 
-          parent_id: folderId ? parseInt(folderId) : null 
-        }]);
-
-      if (error) {
-        console.error(`Error subiendo ${file.name}:`, error.message);
-      }
+      await supabase.from('projects').insert([{ 
+        name: file.name, 
+        parent_id: folderId ? parseInt(folderId) : null 
+      }]);
     }
 
-    // Al terminar todos, refrescamos la vista una sola vez
     if (onRefresh) await onRefresh();
-    alert(`${files.length} folletos procesados correctamente.`);
-    
+    alert("Proceso finalizado");
     if (event.target) event.target.value = '';
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
+      {/* SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-2">
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
@@ -79,34 +78,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </nav>
       </div>
 
+      {/* CONTENIDO */}
       <div className="flex-1 p-10 relative">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-50">
           <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic">{pageTitle}</h1>
           <div className="flex gap-4">
-            <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-[60]">
+            <button onClick={() => {
+              const name = prompt("Nombre de la nueva carpeta:");
+              if (name) supabase.from('folders').insert([{ name, parent_id: folderId ? parseInt(folderId) : null }]).then(() => onRefresh());
+            }} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-[60]">
               + CARPETA
             </button>
-            
-            {/* INPUT CON ATRIBUTO MULTIPLE AÑADIDO */}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              className="hidden" 
-              accept=".pdf,image/*" 
-              multiple 
-            />
-            
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]"
-            >
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,image/*" multiple />
+            <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]">
               SUBIR FOLLETOS
             </button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
+          {/* RENDER CARPETAS */}
           {safeFolders
             .filter((f: any) => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id)
             .map((f: any) => (
@@ -117,12 +108,23 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </div>
             ))}
 
+          {/* RENDER FOLLETOS (CON BOTÓN BORRAR) */}
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
-              <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer">
-                <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
-                <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
+              <div key={p.id} className="group relative bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer">
+                {/* BOTÓN X PARA BORRAR FOLLETO */}
+                <button 
+                  onClick={(e) => handleDeleteProject(e, p.id)} 
+                  className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10"
+                >
+                  ✕
+                </button>
+                
+                <div onClick={() => navigate(`/project/${p.id}`)} className="w-full flex flex-col items-center">
+                  <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
+                  <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
+                </div>
               </div>
             ))}
         </div>
