@@ -7,36 +7,33 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid'); // Por defecto Grid que es más bonito
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
 
-  // Filtramos carpetas y proyectos de la ubicación actual
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
-  // Todos los items de esta carpeta (sin filtrar por versión aún)
+  // Obtenemos todos los items y los ordenamos por nombre para que sigan el orden de subida
   const allItemsInFolder = useMemo(() => 
-    projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id),
+    projects
+      .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
+      .sort((a: any, b: any) => a.name.localeCompare(b.name)), // Ordenar por nombre
   [projects, folderId]);
 
-  // 1. CALCULAMOS LAS VERSIONES DISPONIBLES
   const availableVersions = useMemo(() => {
     const versions = new Set<number>();
     allItemsInFolder.forEach((p: any) => versions.add(p.version || 1));
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
-  // 2. SELECCIONAR LA ÚLTIMA VERSIÓN AUTOMÁTICAMENTE AL ENTRAR
   useEffect(() => {
     if (availableVersions.length > 0) {
-      // Si la versión seleccionada ya no existe o acabamos de cargar, vamos a la última
       if (!availableVersions.includes(selectedVersion)) {
         setSelectedVersion(availableVersions[availableVersions.length - 1]);
       }
     }
   }, [availableVersions, selectedVersion]);
 
-  // 3. FILTRAMOS LOS ITEMS PARA MOSTRAR SOLO LA VERSIÓN SELECCIONADA
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
   const toggleFolder = (id: number, e: React.MouseEvent) => {
@@ -64,14 +61,15 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    // Calculamos la siguiente versión
-    const nextVersion = availableVersions.length > 0 
-      ? Math.max(...availableVersions) + 1 
-      : 1;
+    const nextVersion = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
+    // Usamos una misma marca de tiempo para todo el lote
+    const uploadTimestamp = Date.now();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const cleanName = `${Date.now()}-${i}.jpg`;
+      // Creamos un nombre que incluye el índice (01, 02...) para asegurar el orden
+      const paddedIndex = String(i + 1).padStart(3, '0');
+      const cleanName = `${uploadTimestamp}-${paddedIndex}-${file.name}`;
 
       const { error: uploadError } = await supabase.storage
         .from('FOLLETOS')
@@ -87,15 +85,16 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         .getPublicUrl(cleanName);
 
       await supabase.from('projects').insert([{ 
-        name: file.name, 
+        name: file.name, // Guardamos el nombre original
         parent_id: folderId ? parseInt(folderId) : null,
         image_url: publicUrlData.publicUrl,
-        version: nextVersion // ¡AQUÍ GUARDAMOS LA NUEVA VERSIÓN!
+        version: nextVersion,
+        // Guardamos el nombre en el bucket para poder ordenar por él
+        storage_name: cleanName 
       }]);
     }
 
     if (onRefresh) await onRefresh();
-    // Forzamos la selección de la nueva versión para que el usuario vea lo que acaba de subir
     setSelectedVersion(nextVersion);
     alert(`Se ha subido la Versión ${nextVersion}`);
   };
@@ -137,8 +136,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter">
               {folderId ? safeFolders.find(f => String(f.id) === String(folderId))?.name.toUpperCase() : "MIS PROYECTOS"}
             </h1>
-            
-            {/* BOTONES DE VERSIONES */}
             {availableVersions.length > 0 && (
               <div className="flex gap-2 mt-2">
                 {availableVersions.map(v => (
@@ -159,7 +156,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
 
           <div className="flex gap-4 items-center">
-             {/* TOGGLE VISTA */}
              <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
               <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow text-rose-600' : 'text-slate-400'}`}>📄</button>
               <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow text-rose-600' : 'text-slate-400'}`}>🧱</button>
@@ -175,7 +171,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
-        {/* CARPETAS */}
         {currentFolders.length > 0 && (
           <div className="grid grid-cols-4 gap-6 mb-10">
             {currentFolders.map(f => (
@@ -188,7 +183,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         )}
 
-        {/* LISTA DE ARCHIVOS (FILTRADA POR VERSIÓN) */}
         {currentItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 opacity-50">
             <span className="text-6xl mb-4">📂</span>
@@ -211,8 +205,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                   {currentItems.map((p: any) => (
                     <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
                       <td className="px-10 py-6">
-                        <div className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                          {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300">IMG</div>}
+                        {/* AHORA LA IMAGEN ES UN BOTÓN QUE LLEVA A REVISAR */}
+                        <div 
+                          onClick={() => navigate(`/project/${p.id}`)}
+                          className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                        >
+                          {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold">IMG</div>}
                         </div>
                       </td>
                       <td className="px-10 py-6 italic font-black text-slate-700 text-lg uppercase tracking-tighter">{p.name}</td>
@@ -231,7 +229,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
               {currentItems.map((p: any) => (
                 <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
-                  <div className="aspect-[3/4] bg-slate-50 relative overflow-hidden">
+                  {/* LA IMAGEN GRANDE TAMBIÉN ES UN BOTÓN */}
+                  <div 
+                    onClick={() => navigate(`/project/${p.id}`)}
+                    className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"
+                  >
                     {p.image_url ? (
                       <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     ) : (
