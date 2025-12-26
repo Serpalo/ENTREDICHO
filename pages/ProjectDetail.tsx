@@ -23,10 +23,13 @@ const ProjectDetail = ({ projects = [] }: any) => {
   // CARGAR CORRECCIONES
   const loadCorrections = async () => {
     if (!projectId) return;
+    // Forzamos la conversión a número para asegurar que encuentra los datos
+    const idAsNumber = parseInt(projectId);
+
     const { data, error } = await supabase
       .from('comments')
       .select('*')
-      .eq('page_id', parseInt(projectId)) // CORRECCIÓN 1: Aseguramos que sea número
+      .eq('page_id', idAsNumber) 
       .order('created_at', { ascending: false });
       
     if (error) console.error("Error cargando notas:", error);
@@ -35,7 +38,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   useEffect(() => { loadCorrections(); }, [projectId]);
 
-  // MANEJO DE CLIC EN IMAGEN
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
@@ -44,7 +46,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setNewCoords({ x, y });
   };
 
-  // GUARDAR NOTA
   const handleAddNote = async () => {
     if (!newNote && !newCoords) {
       alert("Escribe una nota o marca un punto en la imagen.");
@@ -58,14 +59,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
         const fileName = `nota-${Date.now()}-${selectedFile.name}`;
         const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
         if (uploadError) throw uploadError;
-        
         const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
         fileUrl = data.publicUrl;
       }
 
-      // CORRECCIÓN 2: Enviamos los datos con el formato exacto y capturamos errores
       const { error: insertError } = await supabase.from('comments').insert([{
-        page_id: projectId ? parseInt(projectId) : null, // IMPORTANTE: Convertir a número
+        page_id: parseInt(projectId || "0"), // Aseguramos número
         content: newNote || "Corrección visual",
         attachment_url: fileUrl,
         resolved: false,
@@ -74,10 +73,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
       }]);
 
       if (insertError) {
-        alert("Error al guardar: " + insertError.message); // AQUÍ VEREMOS SI FALLA
-        console.error(insertError);
+        alert("Error al guardar: " + insertError.message);
       } else {
-        // Si todo va bien, limpiamos
         setNewNote("");
         setSelectedFile(null);
         setNewCoords(null);
@@ -85,15 +82,17 @@ const ProjectDetail = ({ projects = [] }: any) => {
       }
 
     } catch (err: any) {
-      alert("Ha ocurrido un error inesperado: " + err.message);
+      alert("Error inesperado: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
   const toggleCheck = async (id: string, currentResolved: boolean) => {
+    // Actualización visual inmediata
+    setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
     await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id);
-    loadCorrections();
+    loadCorrections(); // Recarga real de fondo
   };
 
   const deleteComment = async (id: string) => {
@@ -132,7 +131,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex overflow-hidden">
         
         {/* VISOR DE IMAGEN */}
@@ -212,26 +210,25 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 key={c.id} 
                 onMouseEnter={() => setHoveredId(c.id)}
                 onMouseLeave={() => setHoveredId(null)}
-                className={`p-4 rounded-2xl border transition-all ${
+                // AQUÍ ESTÁ EL CAMBIO CLAVE: COLORES FIJOS, NO AL HOVER
+                className={`p-4 rounded-2xl border-2 transition-all ${
                   c.resolved 
-                    ? 'bg-slate-50 border-slate-100 opacity-60' 
-                    : hoveredId === c.id 
-                      ? 'bg-rose-50 border-rose-200 shadow-md transform scale-[1.02]' 
-                      : 'bg-white border-slate-100 shadow-sm hover:border-rose-100'
-                }`}
+                    ? 'bg-emerald-50 border-emerald-100 opacity-60' // VERDE SI ESTÁ HECHO
+                    : 'bg-rose-50 border-rose-200'                  // ROJO SI NO ESTÁ HECHO
+                } ${hoveredId === c.id ? 'scale-[1.02] shadow-md' : ''}`}
               >
                 <div className="flex gap-3 items-start">
-                  <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-slate-300 hover:border-rose-400"}`}>
+                  <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-rose-400 hover:scale-110"}`}>
                     {c.resolved && "✓"}
                   </button>
                   <div className="flex-1">
                     <p className={`text-sm font-bold text-slate-700 leading-snug ${c.resolved && "line-through text-slate-400"}`}>{c.content}</p>
                     <div className="flex flex-wrap gap-2 mt-2 items-center">
-                      {c.x !== null && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase">🎯 Mapa</span>}
-                      {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase hover:bg-slate-200">📎 Adjunto</a>}
+                      {c.x !== null && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
+                      {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-white/50 text-slate-500 px-1.5 py-0.5 rounded uppercase border border-slate-200 hover:bg-white">📎 Adjunto</a>}
                     </div>
-                    <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-50">
-                       <span className="text-[9px] text-slate-300 font-bold">{new Date(c.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
+                       <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                        <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
                     </div>
                   </div>
