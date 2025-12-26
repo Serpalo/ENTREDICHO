@@ -38,43 +38,37 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE COMENTARIOS (VUELTA AL CÓDIGO QUE FUNCIONABA) ---
+  // --- CARGA DE COMENTARIOS (LÓGICA RESTAURADA) ---
   const loadComments = async () => {
-    // Obtenemos los IDs numéricos de TODOS los folletos en esta carpeta
+    // Obtenemos los IDs de TODOS los items de la carpeta (no solo los visibles) para asegurar
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     
     if (pageIds.length === 0) return;
 
-    // Pedimos a Supabase todos los comentarios que coincidan con estos IDs
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .in('page_id', pageIds)
       .order('created_at', { ascending: true });
       
-    if (error) {
-      console.error("Error cargando notas:", error);
-    } else {
-      setComments(data || []);
-    }
+    if (error) console.error("Error cargando notas:", error);
+    if (data) setComments(data);
   };
 
-  // Recargamos siempre que cambie algo importante
   useEffect(() => {
     loadComments();
-    const timer = setTimeout(() => loadComments(), 1000); // Doble check de seguridad
+    const timer = setTimeout(() => loadComments(), 1000);
     return () => clearTimeout(timer);
   }, [projects.length, selectedVersion]);
 
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
-    // Actualización visual inmediata (Optimista)
+    // Actualización visual inmediata
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
-    // Actualización real
     await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
     loadComments();
   };
 
-  // --- FUNCIONES BÁSICAS ---
+  // --- FUNCIONES ---
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar este folleto?")) {
@@ -86,7 +80,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
-  // --- SUBIDA DE ARCHIVOS (ARREGLADA PARA EVITAR ERROR 'INVALID KEY') ---
+  // --- SUBIDA SEGURA (SIN ERROR DE TILDES) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -97,26 +91,21 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // 1. LIMPIEZA DE NOMBRE (Esto arregla el error de subida)
-      // Convertimos "Página" en "Pagina" y quitamos símbolos raros para el servidor
-      const sanitizedName = file.name
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quita tildes
-        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Quita espacios y símbolos raros
-
+      // Limpiamos el nombre para el servidor (quitamos tildes y ñ)
+      const sanitizedName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
       const paddedIndex = String(i + 1).padStart(3, '0');
       const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
 
-      // 2. Subimos con el nombre LIMPIO
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
       
       if (uploadError) { 
-        alert("Error al subir (intenta cambiar el nombre del archivo): " + uploadError.message); 
+        alert("Error al subir: " + uploadError.message); 
         continue; 
       }
       
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
-      // 3. Guardamos con el nombre ORIGINAL (para que tú lo veas bonito con tildes)
+      // Guardamos el nombre original (file.name) para que lo veas bonito en la lista
       await supabase.from('projects').insert([{ 
         name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null, 
@@ -213,7 +202,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 </thead>
                 <tbody>
                   {currentItems.map((p: any) => {
-                    // Filtro SEGURO a String para evitar problemas de tipo
+                    // USO DE STRING PARA EVITAR FALLOS DE TIPO
                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                     const pendingCount = myComments.filter(c => !c.resolved).length;
                     
@@ -229,6 +218,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                         </td>
                         <td className="px-4 py-6 align-top">
                           <div className="flex flex-col gap-2">
+                            {/* AVISO DE PENDIENTES */}
                             {pendingCount > 0 ? (
                               <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-50 w-fit px-2 py-0.5 rounded">
                                 ⚠️ {pendingCount} PENDIENTES
@@ -241,13 +231,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                               <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
                             )}
 
+                            {/* LISTA DE NOTAS CON COLORES FUERTES */}
                             {myComments.map(c => (
                                 <div 
                                   key={c.id} 
                                   className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${
                                     c.resolved 
-                                      ? 'bg-emerald-100 border-emerald-200'
-                                      : 'bg-rose-100 border-rose-200'
+                                      ? 'bg-emerald-100 border-emerald-200' // Verde Fuerte
+                                      : 'bg-rose-100 border-rose-200'       // Rojo Fuerte
                                   }`}
                                 >
                                   <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
