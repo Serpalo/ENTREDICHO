@@ -10,6 +10,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   // ESTADOS
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  
+  // INICIALIZACIÓN: Empezamos en 1, pero el useEffect lo cambiará enseguida
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]); 
 
@@ -22,26 +24,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       .sort((a: any, b: any) => a.name.localeCompare(b.name)),
   [projects, folderId]);
 
+  // Calculamos qué versiones existen (V1, V2, V3...)
   const availableVersions = useMemo(() => {
     const versions = new Set<number>();
     allItemsInFolder.forEach((p: any) => versions.add(p.version || 1));
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
+  // --- CAMBIO CLAVE: SELECCIONAR SIEMPRE LA ÚLTIMA VERSIÓN AL CARGAR ---
   useEffect(() => {
     if (availableVersions.length > 0) {
-      if (!availableVersions.includes(selectedVersion)) {
-        setSelectedVersion(availableVersions[availableVersions.length - 1]);
-      }
+      // Cogemos el último número del array (el más alto)
+      const maxVersion = availableVersions[availableVersions.length - 1];
+      setSelectedVersion(maxVersion);
     }
-  }, [availableVersions, selectedVersion]);
+  }, [availableVersions]); // Se ejecuta cada vez que cambian las versiones disponibles (al cargar)
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE CORRECCIONES CORREGIDA ---
+  // --- CARGA DE CORRECCIONES ---
   const loadComments = async () => {
-    // Buscamos comentarios para TODOS los proyectos de esta carpeta, no solo los visibles
-    // Esto asegura que la base de datos devuelve todo
     const pageIds = allItemsInFolder.map((p: any) => parseInt(p.id));
     
     if (pageIds.length === 0) return;
@@ -56,11 +58,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     if (data) setComments(data);
   };
 
-  // Recargar al entrar y al cambiar de versión
   useEffect(() => {
     loadComments();
-    
-    // Intervalo de seguridad por si acaso tardan en llegar (1 segundo)
     const timer = setTimeout(() => loadComments(), 1000);
     return () => clearTimeout(timer);
   }, [projects.length, selectedVersion]);
@@ -79,9 +78,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     }
   };
   
-  // (Mantengo las funciones auxiliares reducidas para no ocupar tanto espacio aquí, pero el código de subida es el mismo)
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
+  
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -97,9 +96,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       await supabase.from('projects').insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null, image_url: publicUrlData.publicUrl, version: nextVersion, storage_name: cleanName }]);
     }
     if (onRefresh) await onRefresh();
+    // Forzamos ir a la nueva versión tras subir
     setSelectedVersion(nextVersion);
     alert(`Versión ${nextVersion} subida`);
   };
+  
   const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
     return safeFolders.filter(f => f.parent_id === parentId).map(f => {
       const hasChildren = safeFolders.some(child => child.parent_id === f.id);
@@ -212,7 +213,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                             {myComments.map(c => (
                                 <div 
                                   key={c.id} 
-                                  // AQUÍ ESTÁ EL CAMBIO DE COLOR DEFINITIVO PARA LA LISTA
                                   className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${
                                     c.resolved 
                                       ? 'bg-emerald-100 border-emerald-200' // VERDE FUERTE
