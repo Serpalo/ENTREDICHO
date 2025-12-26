@@ -8,7 +8,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [corrections, setCorrections] = useState<any[]>([]);
   const [newNote, setNewNote] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [currentVersion, setCurrentVersion] = useState(3);
 
   const project = projects.find((p: any) => String(p.id) === String(projectId));
 
@@ -25,7 +24,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     let fileUrl = "";
 
     if (selectedFile) {
-      const fileName = `${Math.random()}-${selectedFile.name}`;
+      const fileName = `${Date.now()}-note.jpg`;
       await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
       const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
       fileUrl = data.publicUrl;
@@ -53,17 +52,10 @@ const ProjectDetail = ({ projects = [] }: any) => {
   return (
     <div className="min-h-screen bg-slate-50 p-10 font-sans">
       <div className="flex justify-between items-center mb-10">
-        <div className="flex gap-4 items-center">
-          <button onClick={() => navigate(-1)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:bg-slate-50 transition-all">←</button>
-          <h2 className="text-3xl font-black italic uppercase text-slate-800 tracking-tighter">{project.name}</h2>
-        </div>
-        <div className="flex gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-          {[1, 2, 3].map((v) => (
-            <button key={v} onClick={() => setCurrentVersion(v)}
-              className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase transition-all ${currentVersion === v ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-400'}`}>
-              VERSIÓN {v}
-            </button>
-          ))}
+        <button onClick={() => navigate(-1)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">← Volver</button>
+        <h2 className="text-3xl font-black italic uppercase text-slate-800 tracking-tighter">{project.name}</h2>
+        <div className="flex gap-2">
+           <button className="px-6 py-2 rounded-xl font-black text-[10px] uppercase bg-slate-800 text-white shadow-lg">V3 (ACTUAL)</button>
         </div>
       </div>
 
@@ -81,7 +73,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
             <div className="flex gap-3">
               <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
               <label htmlFor="adjunto" className="flex-1 text-center py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px] uppercase cursor-pointer">
-                {selectedFile ? "✓ LISTO" : "📎 ADJUNTAR"}
+                {selectedFile ? "✓ LISTO" : "📎 ADJUNTAR IMAGEN"}
               </label>
               <button onClick={handleAddNote} className="flex-1 py-4 bg-rose-600 text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-rose-100">
                 GUARDAR NOTA
@@ -103,7 +95,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   </p>
                   {c.attachment_url && (
                     <a href={c.attachment_url} target="_blank" rel="noreferrer" className="mt-4 block w-24 h-24 rounded-xl overflow-hidden border-2 border-white shadow-md">
-                      <img src={c.attachment_url} className="w-full h-full object-cover" />
+                      <img src={c.attachment_url} className="w-full h-full object-cover" alt="Adjunto" />
                     </a>
                   )}
                 </div>
