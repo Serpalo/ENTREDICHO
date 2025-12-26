@@ -14,9 +14,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   const safeFolders = Array.isArray(folders) ? folders : [];
-  const safeProjects = Array.isArray(projects) ? projects : [];
   
-  const currentProjects = safeProjects.filter(p => 
+  // IMPORTANTE: Ahora leemos de la tabla 'projects' pero filtrando por carpeta
+  const currentItems = projects.filter((p: any) => 
     folderId ? String(p.parent_id) === String(folderId) : !p.parent_id
   );
 
@@ -32,31 +32,32 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       const fileExt = file.name.split('.').pop();
       const cleanFileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
 
-      // SUBIDA AL BUCKET EN MAYÚSCULAS
+      // 1. Subir al Storage
       const { error: uploadError } = await supabase.storage
-        .from('FOLLETOS') // <-- Nombre corregido
+        .from('FOLLETOS')
         .upload(cleanFileName, file);
 
       if (uploadError) {
-        alert(`Error en Storage (BUCKET FOLLETOS): ${uploadError.message}`);
+        alert(`Error en Storage: ${uploadError.message}`);
         continue;
       }
 
-      // OBTENER URL PÚBLICA EN MAYÚSCULAS
-      const { data: { publicUrl } } = supabase.storage
-        .from('FOLLETOS') // <-- Nombre corregido
-        .getPublicUrl(cleanFileName);
+      const { data: { publicUrl } } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanFileName);
 
-      // INSERTAR EN TABLA
-      await supabase.from('projects').insert([{ 
+      // 2. Insertar en 'projects' (Asegúrate de que esta tabla tiene la columna image_url)
+      const { error: insertError } = await supabase.from('projects').insert([{ 
         name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null,
         image_url: publicUrl 
       }]);
+
+      if (insertError) {
+        alert(`Error en Tabla: ${insertError.message}`);
+      }
     }
 
     if (onRefresh) await onRefresh();
-    alert("Subida completada");
+    alert("Subida completada y lista actualizada");
     if (event.target) event.target.value = '';
   };
 
@@ -72,7 +73,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-all ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
               style={{ paddingLeft: `${level * 12 + 8}px` }}>
               {hasChildren && (
-                <span onClick={(e) => toggleFolder(f.id, e)} className="text-[8px] transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                <span onClick={(e) => toggleFolder(f.id, e)} className="text-[8px]" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
               )}
               <span className="text-sm">📁 {f.name}</span>
             </div>
@@ -88,7 +89,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         <img src="/logo.png" alt="Alcampo" className="h-12 w-fit object-contain" />
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
-          <div className="mt-6 text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Estructura</div>
+          <div className="mt-6 text-[10px] font-black uppercase text-slate-400 tracking-widest px-2 border-b border-slate-50 pb-1">Estructura</div>
           {renderFolderTree(null)}
         </nav>
       </div>
@@ -98,10 +99,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <h1 className="text-5xl font-black text-slate-800 uppercase italic tracking-tighter">{pageTitle}</h1>
           <div className="flex gap-4">
             <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}}
-              className="px-8 py-4 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[11px] uppercase shadow-sm">+ CARPETA</button>
+              className="px-8 py-4 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[11px] uppercase">+ CARPETA</button>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
             <button onClick={() => fileInputRef.current?.click()} className="px-10 py-4 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase shadow-xl hover:scale-105 transition-all">
-              {currentProjects.length > 0 ? "SUBIR NUEVA VERSIÓN" : "SUBIR FOLLETO"}
+              {currentItems.length > 0 ? "SUBIR NUEVA VERSIÓN" : "SUBIR FOLLETO"}
             </button>
           </div>
         </div>
@@ -117,7 +118,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </tr>
             </thead>
             <tbody>
-              {currentProjects.map((p) => (
+              {currentItems.map((p: any) => (
                 <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
                   <td className="px-12 py-8">
                     <div className="w-20 h-28 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -135,6 +136,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               ))}
             </tbody>
           </table>
+          {currentItems.length === 0 && (
+            <div className="p-32 text-center text-slate-300 font-black uppercase tracking-widest text-sm italic">No hay folletos aquí. Pulsa el botón rojo para subir uno.</div>
+          )}
         </div>
       </div>
     </div>
