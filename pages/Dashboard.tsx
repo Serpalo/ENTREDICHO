@@ -10,8 +10,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   // ESTADOS
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  
-  // INICIALIZACIÓN: Empezamos en 1, pero el useEffect lo cambiará enseguida
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]); 
 
@@ -24,28 +22,25 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       .sort((a: any, b: any) => a.name.localeCompare(b.name)),
   [projects, folderId]);
 
-  // Calculamos qué versiones existen (V1, V2, V3...)
   const availableVersions = useMemo(() => {
     const versions = new Set<number>();
     allItemsInFolder.forEach((p: any) => versions.add(p.version || 1));
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
-  // --- CAMBIO CLAVE: SELECCIONAR SIEMPRE LA ÚLTIMA VERSIÓN AL CARGAR ---
+  // AUTO-SELECCIÓN DE LA ÚLTIMA VERSIÓN
   useEffect(() => {
     if (availableVersions.length > 0) {
-      // Cogemos el último número del array (el más alto)
       const maxVersion = availableVersions[availableVersions.length - 1];
       setSelectedVersion(maxVersion);
     }
-  }, [availableVersions]); // Se ejecuta cada vez que cambian las versiones disponibles (al cargar)
+  }, [availableVersions]);
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE CORRECCIONES ---
+  // CARGA DE COMENTARIOS
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => parseInt(p.id));
-    
     if (pageIds.length === 0) return;
 
     const { data, error } = await supabase
@@ -54,7 +49,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       .in('page_id', pageIds)
       .order('created_at', { ascending: true });
       
-    if (error) console.error("Error buscando comentarios en dashboard:", error);
+    if (error) console.error("Error cargando comentarios:", error);
     if (data) setComments(data);
   };
 
@@ -81,24 +76,49 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
+  // --- FUNCIÓN DE SUBIDA MEJORADA (SOLUCIÓN AL ERROR) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
+    
     const nextVersion = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
     const uploadTimestamp = Date.now();
+    
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      
+      // LIMPIEZA DE NOMBRE: Quitamos tildes y caracteres raros
+      const sanitizedFileName = file.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // Elimina tildes (Página -> Pagina)
+        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Reemplaza símbolos raros por guion bajo
+
       const paddedIndex = String(i + 1).padStart(3, '0');
-      const cleanName = `${uploadTimestamp}-${paddedIndex}-${file.name}`;
+      
+      // Usamos el nombre limpio para el almacenamiento
+      const cleanName = `${uploadTimestamp}-${paddedIndex}-${sanitizedFileName}`;
+
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
-      if (uploadError) { alert("Error: " + uploadError.message); continue; }
+      
+      if (uploadError) { 
+        alert("Error al subir archivo: " + uploadError.message); 
+        continue; 
+      }
+      
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
-      await supabase.from('projects').insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null, image_url: publicUrlData.publicUrl, version: nextVersion, storage_name: cleanName }]);
+      
+      await supabase.from('projects').insert([{ 
+        name: file.name, // Guardamos el nombre original para mostrarlo bonito
+        parent_id: folderId ? parseInt(folderId) : null, 
+        image_url: publicUrlData.publicUrl, 
+        version: nextVersion, 
+        storage_name: cleanName 
+      }]);
     }
+    
     if (onRefresh) await onRefresh();
-    // Forzamos ir a la nueva versión tras subir
     setSelectedVersion(nextVersion);
-    alert(`Versión ${nextVersion} subida`);
+    alert(`Versión ${nextVersion} subida con éxito`);
   };
   
   const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
@@ -215,8 +235,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                   key={c.id} 
                                   className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${
                                     c.resolved 
-                                      ? 'bg-emerald-100 border-emerald-200' // VERDE FUERTE
-                                      : 'bg-rose-100 border-rose-200'       // ROJO FUERTE
+                                      ? 'bg-emerald-100 border-emerald-200'
+                                      : 'bg-rose-100 border-rose-200'
                                   }`}
                                 >
                                   <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
