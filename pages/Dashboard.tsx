@@ -38,21 +38,24 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE COMENTARIOS (LÓGICA RESTAURADA) ---
+  // --- CARGA DE COMENTARIOS (Versión Robusta) ---
   const loadComments = async () => {
-    // Obtenemos los IDs de TODOS los items de la carpeta (no solo los visibles) para asegurar
+    // 1. Obtenemos IDs de todo lo que hay en la carpeta
     const pageIds = allItemsInFolder.map((p: any) => p.id);
-    
     if (pageIds.length === 0) return;
 
+    // 2. Pedimos las notas
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .in('page_id', pageIds)
       .order('created_at', { ascending: true });
       
-    if (error) console.error("Error cargando notas:", error);
-    if (data) setComments(data);
+    if (error) {
+      console.error("Error cargando notas:", error);
+    } else {
+      setComments(data || []);
+    }
   };
 
   useEffect(() => {
@@ -62,13 +65,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   }, [projects.length, selectedVersion]);
 
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
-    // Actualización visual inmediata
+    // Cambio visual inmediato
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
+    // Cambio en base de datos
     await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
     loadComments();
   };
 
-  // --- FUNCIONES ---
+  // --- FUNCIONES DE GESTIÓN ---
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar este folleto?")) {
@@ -77,10 +81,20 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     }
   };
   
-  const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
-  const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
+  const toggleFolder = (id: number, e: React.MouseEvent) => { 
+    e.stopPropagation(); 
+    setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); 
+  };
   
-  // --- SUBIDA SEGURA (SIN ERROR DE TILDES) ---
+  const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { 
+    e.stopPropagation(); 
+    if (window.confirm("¿Eliminar carpeta?")) { 
+      await supabase.from('folders').delete().eq('id', id); 
+      if (onRefresh) onRefresh(); 
+    } 
+  };
+  
+  // --- SUBIDA DE ARCHIVOS (ARREGLADA: Renombra para evitar error de tildes) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -91,21 +105,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // Limpiamos el nombre para el servidor (quitamos tildes y ñ)
-      const sanitizedName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+      // 1. LIMPIEZA DE NOMBRE: "Página" -> "Pagina"
+      // Esto evita el error "Invalid Key" de Supabase
+      const sanitizedName = file.name
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quita tildes
+        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Quita símbolos raros
+
       const paddedIndex = String(i + 1).padStart(3, '0');
+      // Nombre interno SEGURO (sin tildes)
       const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
 
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
       
       if (uploadError) { 
-        alert("Error al subir: " + uploadError.message); 
+        alert("Error al subir archivo: " + uploadError.message); 
         continue; 
       }
       
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
-      // Guardamos el nombre original (file.name) para que lo veas bonito en la lista
+      // Guardamos con el nombre ORIGINAL para que en la lista se vea bonito (con tildes)
       await supabase.from('projects').insert([{ 
         name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null, 
@@ -126,7 +145,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       const isOpen = openFolders[f.id];
       return (
         <div key={f.id} className="flex flex-col">
-          <div onClick={() => navigate(`/folder/${f.id}`)} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`} style={{ paddingLeft: `${level * 12 + 8}px` }}>{hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px]">{isOpen ? '▼' : '▶'}</span>}<span className="text-sm">📁 {f.name}</span></div>{hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
+          <div onClick={() => navigate(`/folder/${f.id}`)} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`} style={{ paddingLeft: `${level * 12 + 8}px` }}>
+            {hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px]">{isOpen ? '▼' : '▶'}</span>}
+            <span className="text-sm">📁 {f.name}</span>
+          </div>
+          {hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
         </div>
       );
     });
@@ -134,6 +157,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
+      {/* SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
         <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-10 w-fit object-contain" />
         <nav className="flex flex-col gap-2">
@@ -143,6 +167,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </nav>
       </div>
 
+      {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
           <div className="flex flex-col gap-2">
@@ -171,6 +196,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
+        {/* CARPETAS INTERIORES */}
         {currentFolders.length > 0 && (
           <div className="grid grid-cols-4 gap-6 mb-10">
             {currentFolders.map(f => (
@@ -183,6 +209,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         )}
 
+        {/* LISTA DE ARCHIVOS */}
         {currentItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 opacity-50">
             <span className="text-6xl mb-4">📂</span>
@@ -202,7 +229,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 </thead>
                 <tbody>
                   {currentItems.map((p: any) => {
-                    // USO DE STRING PARA EVITAR FALLOS DE TIPO
+                    // FILTRO DE COMENTARIOS
                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                     const pendingCount = myComments.filter(c => !c.resolved).length;
                     
@@ -218,7 +245,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                         </td>
                         <td className="px-4 py-6 align-top">
                           <div className="flex flex-col gap-2">
-                            {/* AVISO DE PENDIENTES */}
+                            {/* AVISO SUPERIOR */}
                             {pendingCount > 0 ? (
                               <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-50 w-fit px-2 py-0.5 rounded">
                                 ⚠️ {pendingCount} PENDIENTES
@@ -231,14 +258,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                               <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
                             )}
 
-                            {/* LISTA DE NOTAS CON COLORES FUERTES */}
+                            {/* LISTA DE NOTAS (COLORES FUERTES) */}
                             {myComments.map(c => (
                                 <div 
                                   key={c.id} 
                                   className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${
                                     c.resolved 
-                                      ? 'bg-emerald-100 border-emerald-200' // Verde Fuerte
-                                      : 'bg-rose-100 border-rose-200'       // Rojo Fuerte
+                                      ? 'bg-emerald-100 border-emerald-200' // VERDE
+                                      : 'bg-rose-100 border-rose-200'       // ROJO
                                   }`}
                                 >
                                   <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
@@ -265,6 +292,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </table>
             </div>
           ) : (
+            // VISTA GRID
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
               {currentItems.map((p: any) => {
                  const myComments = comments.filter(c => String(c.page_id) === String(p.id));
