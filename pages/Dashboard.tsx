@@ -7,7 +7,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Estado para controlar qué carpetas están desplegadas en el menú
+  // Estado para controlar qué carpetas están desplegadas en el menú lateral
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
 
   const toggleFolder = (id: number, e: React.MouseEvent) => {
@@ -20,7 +20,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const currentFolder = safeFolders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
-  // Función recursiva para dibujar el árbol de carpetas con flechas
+  // --- RENDERIZADO DEL ÁRBOL CON FLECHAS ---
   const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
     return safeFolders
       .filter(f => f.parent_id === parentId)
@@ -32,19 +32,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <div key={f.id} className="flex flex-col">
             <div 
               onClick={() => navigate(`/folder/${f.id}`)}
-              className={`flex items-center gap-2 py-1 px-2 rounded-lg cursor-pointer transition-colors ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-colors ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600' : 'text-slate-500 hover:bg-slate-50'}`}
               style={{ paddingLeft: `${level * 12 + 8}px` }}
             >
               {hasChildren ? (
-                <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px] transition-transform duration-200" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px] p-1 hover:bg-slate-200 rounded transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                   ▶
                 </span>
               ) : (
-                <span className="w-2"></span>
+                <span className="w-4"></span>
               )}
-              <span className="text-sm">📁 {f.name}</span>
+              <span className="text-sm font-medium truncate">📁 {f.name}</span>
             </div>
-            {/* Si la carpeta tiene hijos y está abierta, los dibujamos debajo */}
             {hasChildren && isOpen && (
               <div className="flex flex-col">
                 {renderFolderTree(f.id, level + 1)}
@@ -55,20 +54,20 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       });
   };
 
-  // ... (Funciones de borrado y subida se mantienen igual que antes)
+  // --- FUNCIONES DE ACCIÓN ---
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar carpeta?")) {
       await supabase.from('folders').delete().eq('id', id);
-      onRefresh();
+      if (onRefresh) onRefresh();
     }
   };
 
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    if (window.confirm("¿Eliminar folleto?")) {
+    if (window.confirm("¿Eliminar este folleto?")) {
       await supabase.from('projects').delete().eq('id', id);
-      onRefresh();
+      if (onRefresh) onRefresh();
     }
   };
 
@@ -76,19 +75,22 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     const files = event.target.files;
     if (!files) return;
     for (let i = 0; i < files.length; i++) {
-      await supabase.from('projects').insert([{ name: files[i].name, parent_id: folderId ? parseInt(folderId) : null }]);
+      await supabase.from('projects').insert([{ 
+        name: files[i].name, 
+        parent_id: folderId ? parseInt(folderId) : null 
+      }]);
     }
-    onRefresh();
+    if (onRefresh) onRefresh();
     if (event.target) event.target.value = '';
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
-      {/* SIDEBAR */}
+      {/* SIDEBAR CON LOGO LOCAL Y ÁRBOL JERÁRQUICO */}
       <div className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col gap-6 overflow-y-auto">
-        <div className="flex items-center mb-4">
-          {/* Recuperamos el logo local logo.png */}
-          <img src="/logo.png" alt="Logo" className="h-10 object-contain" />
+        <div className="flex items-center mb-2 px-2">
+          {/* Logo local logo.png */}
+          <img src="/logo.png" alt="Alcampo" className="h-10 w-auto object-contain" />
         </div>
         
         <nav className="flex flex-col gap-2">
@@ -96,8 +98,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <span>🏠</span> Inicio
           </div>
           
-          <div className="mt-4 mb-2 text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Estructura</div>
-          {/* Llamamos a la función del árbol */}
+          <div className="mt-4 mb-2 text-[10px] font-black uppercase text-slate-400 tracking-widest px-2 border-b border-slate-100 pb-1">Estructura</div>
           {renderFolderTree(null)}
         </nav>
       </div>
@@ -116,7 +117,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             >
               + CARPETA
             </button>
-            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple accept=".pdf,image/*" />
             <button 
               onClick={() => fileInputRef.current?.click()} 
               className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]"
@@ -127,23 +128,25 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
-          {/* CARPETAS EN CUADRICULA */}
+          {/* CARPETAS */}
           {safeFolders
             .filter((f: any) => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id)
             .map((f: any) => (
-              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all">
-                <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10">✕</button>
+              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all hover:-translate-y-1">
+                <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10 opacity-0 group-hover:opacity-100">✕</button>
                 <div className="text-6xl mb-4 opacity-80">📁</div>
                 <span className="font-black text-[11px] uppercase text-slate-500 tracking-widest text-center">{f.name}</span>
               </div>
             ))}
 
-          {/* FOLLETOS EN CUADRICULA */}
+          {/* FOLLETOS QUE AL PULSAR REDIRIGEN A LA VISTA DE LISTA */}
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
-              <div key={p.id} className="group relative bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer">
-                <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10">✕</button>
+              <div key={p.id} className="group relative bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer hover:-translate-y-1">
+                <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10 opacity-0 group-hover:opacity-100">✕</button>
+                
+                {/* Al hacer clic en el cuerpo del folleto, vamos a la lista de páginas */}
                 <div onClick={() => navigate(`/project/${p.id}`)} className="w-full flex flex-col items-center">
                   <div className="aspect-[3/4] rounded-[1.8rem] mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
                   <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
