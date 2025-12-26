@@ -6,18 +6,21 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // ESTADOS
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list'); // Por defecto LISTA para ver las correcciones
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
+  const [comments, setComments] = useState<any[]>([]); // Estado para guardar las correcciones cargadas
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
-  // Obtenemos todos los items y los ordenamos por nombre para que sigan el orden de subida
+  // Filtros de items y versiones
   const allItemsInFolder = useMemo(() => 
     projects
       .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
-      .sort((a: any, b: any) => a.name.localeCompare(b.name)), // Ordenar por nombre
+      .sort((a: any, b: any) => a.name.localeCompare(b.name)),
   [projects, folderId]);
 
   const availableVersions = useMemo(() => {
@@ -36,6 +39,40 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
+  // --- NUEVO: CARGAR CORRECCIONES DE LOS ITEMS VISIBLES ---
+  const loadComments = async () => {
+    if (currentItems.length === 0) return;
+    
+    // Obtenemos los IDs de los folletos que se están viendo
+    const pageIds = currentItems.map((p: any) => p.id);
+    
+    const { data } = await supabase
+      .from('comments')
+      .select('*')
+      .in('page_id', pageIds)
+      .order('created_at', { ascending: true }); // Ordenamos por fecha
+      
+    if (data) setComments(data);
+  };
+
+  // Recargar comentarios cuando cambian los items o la versión
+  useEffect(() => {
+    loadComments();
+  }, [currentItems.length, selectedVersion]);
+
+  // --- NUEVO: MARCAR COMO HECHA/PENDIENTE DESDE LA LISTA ---
+  const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
+    // 1. Actualización optimista (para que se vea instantáneo)
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
+    
+    // 2. Actualización real en base de datos
+    await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
+    
+    // 3. Recargar por si acaso hubo cambios externos
+    loadComments();
+  };
+
+  // --- FUNCIONES ANTIGUAS (Sin cambios) ---
   const toggleFolder = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setOpenFolders(prev => ({ ...prev, [id]: !prev[id] }));
@@ -62,34 +99,27 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     if (!files || files.length === 0) return;
 
     const nextVersion = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
-    // Usamos una misma marca de tiempo para todo el lote
     const uploadTimestamp = Date.now();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // Creamos un nombre que incluye el índice (01, 02...) para asegurar el orden
       const paddedIndex = String(i + 1).padStart(3, '0');
       const cleanName = `${uploadTimestamp}-${paddedIndex}-${file.name}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('FOLLETOS')
-        .upload(cleanName, file);
+      const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
 
       if (uploadError) {
         alert("Error de subida: " + uploadError.message);
         continue;
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from('FOLLETOS')
-        .getPublicUrl(cleanName);
+      const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
 
       await supabase.from('projects').insert([{ 
-        name: file.name, // Guardamos el nombre original
+        name: file.name,
         parent_id: folderId ? parseInt(folderId) : null,
         image_url: publicUrlData.publicUrl,
         version: nextVersion,
-        // Guardamos el nombre en el bucket para poder ordenar por él
         storage_name: cleanName 
       }]);
     }
@@ -121,6 +151,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
+      {/* SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
         <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-10 w-fit object-contain" />
         <nav className="flex flex-col gap-2">
@@ -130,6 +161,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </nav>
       </div>
 
+      {/* CONTENIDO */}
       <div className="flex-1 p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
           <div className="flex flex-col gap-2">
@@ -193,60 +225,118 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         ) : (
           viewMode === 'list' ? (
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-              <table className="w-full text-left">
+              <table className="w-full text-left table-fixed">
                 <thead>
                   <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
-                    <th className="px-10 py-6">Vista</th>
-                    <th className="px-10 py-6">Página</th>
-                    <th className="px-10 py-6 text-right">Acción</th>
+                    <th className="px-8 py-6 w-32">Vista</th>
+                    <th className="px-4 py-6 w-1/4">Página</th>
+                    
+                    {/* NUEVA COLUMNA DE CORRECCIONES */}
+                    <th className="px-4 py-6">Correcciones Pendientes</th>
+                    
+                    <th className="px-8 py-6 text-right w-40">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {currentItems.map((p: any) => (
-                    <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
-                      <td className="px-10 py-6">
-                        {/* AHORA LA IMAGEN ES UN BOTÓN QUE LLEVA A REVISAR */}
-                        <div 
-                          onClick={() => navigate(`/project/${p.id}`)}
-                          className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
-                        >
-                          {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold">IMG</div>}
-                        </div>
-                      </td>
-                      <td className="px-10 py-6 italic font-black text-slate-700 text-lg uppercase tracking-tighter">{p.name}</td>
-                      <td className="px-10 py-6 text-right">
-                        <div className="flex gap-4 justify-end items-center">
-                          <button onClick={(e) => handleDeleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 transition-colors">✕</button>
-                          <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest">Revisar →</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {currentItems.map((p: any) => {
+                    // Filtramos los comentarios de ESTE proyecto
+                    const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                    
+                    return (
+                      <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                        {/* 1. IMAGEN */}
+                        <td className="px-8 py-6 align-top">
+                          <div 
+                            onClick={() => navigate(`/project/${p.id}`)}
+                            className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                          >
+                            {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold">IMG</div>}
+                          </div>
+                        </td>
+
+                        {/* 2. NOMBRE */}
+                        <td className="px-4 py-6 align-top">
+                          <p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter break-words pr-4">{p.name}</p>
+                        </td>
+
+                        {/* 3. COLUMNA DE CORRECCIONES (NUEVO) */}
+                        <td className="px-4 py-6 align-top">
+                          <div className="flex flex-col gap-2">
+                            {myComments.length === 0 ? (
+                              <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
+                            ) : (
+                              myComments.map(c => (
+                                <div 
+                                  key={c.id} 
+                                  className={`flex items-start gap-3 p-2 rounded-lg border transition-all ${
+                                    c.resolved 
+                                      ? 'bg-emerald-50 border-emerald-100'  // ESTILO VERDE (HECHO)
+                                      : 'bg-rose-50 border-rose-100'        // ESTILO ROJO (PENDIENTE)
+                                  }`}
+                                >
+                                  {/* Checkbox Interactiva */}
+                                  <div 
+                                    onClick={() => toggleCommentResolved(c.id, c.resolved)}
+                                    className={`w-5 h-5 rounded border mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 ${
+                                      c.resolved 
+                                        ? 'bg-emerald-500 border-emerald-500' 
+                                        : 'bg-white border-rose-300 hover:border-rose-500'
+                                    }`}
+                                  >
+                                    {c.resolved && <span className="text-white text-[10px] font-bold">✓</span>}
+                                  </div>
+                                  
+                                  {/* Texto de la corrección */}
+                                  <span className={`text-xs font-bold leading-tight ${c.resolved ? 'text-emerald-700 line-through opacity-70' : 'text-rose-700'}`}>
+                                    {c.content}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 4. ACCIÓN */}
+                        <td className="px-8 py-6 text-right align-top">
+                          <div className="flex flex-col gap-2 items-end">
+                            <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 transition-colors">Revisar →</button>
+                            <button onClick={(e) => handleDeleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase transition-colors">Eliminar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
+            // VISTA GRID (Se mantiene igual, pero podríamos añadir indicador)
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-              {currentItems.map((p: any) => (
-                <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
-                  {/* LA IMAGEN GRANDE TAMBIÉN ES UN BOTÓN */}
-                  <div 
-                    onClick={() => navigate(`/project/${p.id}`)}
-                    className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"
-                  >
-                    {p.image_url ? (
-                      <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>
-                    )}
-                    <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm font-bold">✕</button>
+              {currentItems.map((p: any) => {
+                 const pendingCount = comments.filter(c => String(c.page_id) === String(p.id) && !c.resolved).length;
+                 return (
+                  <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
+                    <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer">
+                      {p.image_url ? (
+                        <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>
+                      )}
+                      {/* Badge de correcciones pendientes en GRID */}
+                      {pendingCount > 0 && (
+                        <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse">
+                          {pendingCount} CORRECCIONES
+                        </div>
+                      )}
+                      <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm font-bold">✕</button>
+                    </div>
+                    <div className="p-6 flex flex-col gap-3">
+                      <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate" title={p.name}>{p.name}</h3>
+                      <button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button>
+                    </div>
                   </div>
-                  <div className="p-6 flex flex-col gap-3">
-                    <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate" title={p.name}>{p.name}</h3>
-                    <button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )
         )}
