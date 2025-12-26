@@ -35,17 +35,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     const { error } = await supabase
       .from('projects')
-      .insert([{ 
-        name: file.name, 
-        parent_id: folderId ? parseInt(folderId) : null 
-      }]);
-
-    if (error) {
-      alert("Error al subir: " + error.message);
-    } else {
+      .insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null }]);
+    if (error) alert("Error al subir: " + error.message);
+    else {
       if (onRefresh) await onRefresh();
       alert("Folleto subido: " + file.name);
     }
@@ -53,14 +47,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans isolate">
-      {/* SIDEBAR */}
+    <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-2">
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
         </div>
         <nav className="flex flex-col gap-4">
-          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer">
+          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600">
             <span>🏠</span> Inicio
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
@@ -72,29 +65,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </nav>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 p-10 relative">
-        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-10">
+        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-50">
           <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic">{pageTitle}</h1>
-          
-          <div className="flex gap-4 relative">
-            <button 
-              onClick={handleCreateFolder} 
-              className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-20"
-            >
+          <div className="flex gap-4">
+            <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-[60]">
               + CARPETA
             </button>
-            
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,image/*" />
-            
             <button 
-              type="button"
-              onClick={() => {
-                console.log("Clic detectado en SUBIR FOLLETO");
-                fileInputRef.current?.click();
-              }} 
-              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 cursor-pointer hover:scale-105 active:scale-95 transition-all block relative z-[999]"
-              style={{ pointerEvents: 'auto', WebkitAppearance: 'none' }}
+              onClick={() => fileInputRef.current?.click()} 
+              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]"
+              style={{ pointerEvents: 'auto' }}
             >
               SUBIR FOLLETO
             </button>
@@ -111,7 +93,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <span className="font-black text-[11px] uppercase text-slate-500 tracking-widest text-center">{f.name}</span>
               </div>
             ))}
-
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
