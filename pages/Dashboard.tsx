@@ -13,6 +13,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const currentFolder = safeFolders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
+  // --- CARPETAS ---
   const handleCreateFolder = async () => {
     const name = prompt("Nombre de la nueva carpeta:");
     if (!name) return;
@@ -32,17 +33,30 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     }
   };
 
+  // --- SUBIDA MÚLTIPLE (CORREGIDO) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const { error } = await supabase
-      .from('projects')
-      .insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null }]);
-    if (error) alert("Error al subir: " + error.message);
-    else {
-      if (onRefresh) await onRefresh();
-      alert("Folleto subido: " + file.name);
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    // Procesamos cada archivo seleccionado
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const { error } = await supabase
+        .from('projects')
+        .insert([{ 
+          name: file.name, 
+          parent_id: folderId ? parseInt(folderId) : null 
+        }]);
+
+      if (error) {
+        console.error(`Error subiendo ${file.name}:`, error.message);
+      }
     }
+
+    // Al terminar todos, refrescamos la vista una sola vez
+    if (onRefresh) await onRefresh();
+    alert(`${files.length} folletos procesados correctamente.`);
+    
     if (event.target) event.target.value = '';
   };
 
@@ -53,12 +67,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
         </div>
         <nav className="flex flex-col gap-4">
-          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600 transition-colors">
+          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600">
             <span>🏠</span> Inicio
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
           {safeFolders.filter(f => !f.parent_id).map(f => (
-            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600 transition-colors text-ellipsis overflow-hidden">
+            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600">
               <span>📁</span> {f.name}
             </div>
           ))}
@@ -72,12 +86,22 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-[60]">
               + CARPETA
             </button>
-            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,image/*" />
+            
+            {/* INPUT CON ATRIBUTO MULTIPLE AÑADIDO */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              className="hidden" 
+              accept=".pdf,image/*" 
+              multiple 
+            />
+            
             <button 
               onClick={() => fileInputRef.current?.click()} 
               className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg cursor-pointer hover:scale-105 transition-all relative z-[9999]"
             >
-              SUBIR FOLLETO
+              SUBIR FOLLETOS
             </button>
           </div>
         </div>
@@ -86,7 +110,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           {safeFolders
             .filter((f: any) => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id)
             .map((f: any) => (
-              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all hover:-translate-y-1">
+              <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-10 rounded-[2.5rem] border border-slate-100 cursor-pointer flex flex-col items-center hover:shadow-xl transition-all">
                 <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all z-10">✕</button>
                 <div className="text-6xl mb-4 opacity-80">📁</div>
                 <span className="font-black text-[11px] uppercase text-slate-500 tracking-widest text-center">{f.name}</span>
@@ -96,11 +120,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
-              <div 
-                key={p.id} 
-                onClick={() => navigate(`/project/${p.id}`)} 
-                className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer hover:-translate-y-1"
-              >
+              <div key={p.id} onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all cursor-pointer">
                 <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
                 <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
               </div>
