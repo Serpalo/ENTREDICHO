@@ -54,13 +54,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
       <div className="flex justify-between items-center mb-10">
         <button onClick={() => navigate(-1)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">← Volver</button>
         <h2 className="text-3xl font-black italic uppercase text-slate-800 tracking-tighter">{project.name}</h2>
-        <div className="flex gap-2">
-           <button className="px-6 py-2 rounded-xl font-black text-[10px] uppercase bg-slate-800 text-white shadow-lg">V3 (ACTUAL)</button>
-        </div>
+        <div className="flex gap-2 bg-white p-2 rounded-2xl border border-slate-100 font-black text-[10px] text-slate-400 uppercase">V3 (ACTUAL)</div>
       </div>
 
       <div className="grid grid-cols-12 gap-10">
-        <div className="col-span-7 bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 h-fit sticky top-10">
+        <div className="col-span-7 bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 sticky top-10">
           <img src={project.image_url} alt="Folleto" className="w-full h-auto rounded-[2rem] shadow-inner" />
         </div>
 
@@ -73,10 +71,10 @@ const ProjectDetail = ({ projects = [] }: any) => {
             <div className="flex gap-3">
               <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
               <label htmlFor="adjunto" className="flex-1 text-center py-4 bg-slate-100 text-slate-500 rounded-xl font-black text-[9px] uppercase cursor-pointer">
-                {selectedFile ? "✓ LISTO" : "📎 ADJUNTAR IMAGEN"}
+                {selectedFile ? "✓ LISTO" : "📎 ADJUNTO"}
               </label>
               <button onClick={handleAddNote} className="flex-1 py-4 bg-rose-600 text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-rose-100">
-                GUARDAR NOTA
+                GUARDAR
               </button>
             </div>
           </div>
@@ -95,7 +93,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   </p>
                   {c.attachment_url && (
                     <a href={c.attachment_url} target="_blank" rel="noreferrer" className="mt-4 block w-24 h-24 rounded-xl overflow-hidden border-2 border-white shadow-md">
-                      <img src={c.attachment_url} className="w-full h-full object-cover" alt="Adjunto" />
+                      <img src={c.attachment_url} className="w-full h-full object-cover" />
                     </a>
                   )}
                 </div>
