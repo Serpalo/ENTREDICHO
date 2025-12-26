@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { supabase } from './supabase';
 import Dashboard from './pages/Dashboard';
-import ProjectDetail from './pages/ProjectDetail'; // Importamos la nueva vista
+import ProjectDetail from './pages/ProjectDetail';
 
 export default function App() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -19,20 +19,15 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   return (
     <BrowserRouter>
-      <div className="app-container">
-        <Routes>
-          <Route path="/" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
-          <Route path="/folder/:folderId" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
-          {/* RUTA PARA VER LA LISTA DE PÁGINAS DEL FOLLETO */}
-          <Route path="/project/:projectId" element={<ProjectDetail projects={projects} />} />
-        </Routes>
-      </div>
+      <Routes>
+        <Route path="/" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
+        <Route path="/folder/:folderId" element={<Dashboard projects={projects} folders={folders} onRefresh={fetchData} />} />
+        <Route path="/project/:projectId" element={<ProjectDetail projects={projects} />} />
+      </Routes>
     </BrowserRouter>
   );
 }
