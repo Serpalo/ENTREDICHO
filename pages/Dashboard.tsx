@@ -53,7 +53,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans">
+    <div className="flex min-h-screen bg-slate-50 font-sans isolate">
       {/* SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-2">
@@ -65,31 +65,36 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
           {safeFolders.filter(f => !f.parent_id).map(f => (
-            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600">
+            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="flex items-center gap-3 text-slate-500 text-sm cursor-pointer hover:text-rose-600 transition-colors">
               <span>📁</span> {f.name}
             </div>
           ))}
         </nav>
       </div>
 
-      {/* CONTENIDO */}
-      <div className="flex-1 p-10">
-        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-20">
+      {/* CONTENIDO PRINCIPAL */}
+      <div className="flex-1 p-10 relative">
+        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-10">
           <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic">{pageTitle}</h1>
-          <div className="flex gap-4 relative z-30">
-            <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 transition-all">
+          
+          <div className="flex gap-4 relative">
+            <button 
+              onClick={handleCreateFolder} 
+              className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 relative z-20"
+            >
               + CARPETA
             </button>
             
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,image/*" />
             
             <button 
+              type="button"
               onClick={() => {
-                console.log("Botón pulsado");
+                console.log("Clic detectado en SUBIR FOLLETO");
                 fileInputRef.current?.click();
               }} 
-              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 cursor-pointer hover:scale-105 active:scale-95 transition-all relative z-50"
-              style={{ pointerEvents: 'auto' }}
+              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 cursor-pointer hover:scale-105 active:scale-95 transition-all block relative z-[999]"
+              style={{ pointerEvents: 'auto', WebkitAppearance: 'none' }}
             >
               SUBIR FOLLETO
             </button>
@@ -110,7 +115,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
-              <div key={p.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center hover:shadow-xl transition-all">
+              <div key={p.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col items-center">
                 <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full text-4xl opacity-10">📄</div>
                 <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
               </div>
