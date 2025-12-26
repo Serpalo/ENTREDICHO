@@ -14,17 +14,33 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   const safeFolders = Array.isArray(folders) ? folders : [];
-  const currentItems = projects.filter((p: any) => 
-    folderId ? String(p.parent_id) === String(folderId) : !p.parent_id
-  );
+  const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
+  const currentProjects = projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id);
 
+  // --- FUNCIONES DE BORRADO ---
+  const handleDeleteFolder = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (window.confirm("¿Eliminar carpeta y su contenido?")) {
+      await supabase.from('folders').delete().eq('id', id);
+      if (onRefresh) onRefresh();
+    }
+  };
+
+  const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (window.confirm("¿Eliminar este folleto?")) {
+      await supabase.from('projects').delete().eq('id', id);
+      if (onRefresh) onRefresh();
+    }
+  };
+
+  // --- SUBIDA DE ARCHIVOS ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // Simplificamos el nombre para evitar el error "Invalid key"
       const cleanName = `${Date.now()}-${i}.jpg`;
 
       const { error: uploadError } = await supabase.storage
@@ -36,9 +52,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         continue;
       }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('FOLLETOS')
-        .getPublicUrl(cleanName);
+      const { data: { publicUrl } } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
 
       await supabase.from('projects').insert([{ 
         name: file.name, 
@@ -62,7 +76,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div onClick={() => navigate(`/folder/${f.id}`)}
               className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}
               style={{ paddingLeft: `${level * 12 + 8}px` }}>
-              {hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[8px]">{isOpen ? '▼' : '▶'}</span>}
+              {hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px]">{isOpen ? '▼' : '▶'}</span>}
               <span className="text-sm">📁 {f.name}</span>
             </div>
             {hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
@@ -88,13 +102,25 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             {folderId ? safeFolders.find(f => String(f.id) === String(folderId))?.name.toUpperCase() : "MIS PROYECTOS"}
           </h1>
           <div className="flex gap-4">
+            <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}}
+              className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase">+ CARPETA</button>
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
-            <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">
-              {currentItems.length > 0 ? "SUBIR NUEVA VERSIÓN" : "SUBIR FOLLETOS"}
-            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg">SUBIR FOLLETOS</button>
           </div>
         </div>
 
+        {/* REJILLA DE CARPETAS */}
+        <div className="grid grid-cols-4 gap-6 mb-10">
+          {currentFolders.map(f => (
+            <div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all">
+              <button onClick={(e) => handleDeleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+              <span className="text-4xl mb-2">📁</span>
+              <span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* LISTA DE PROYECTOS */}
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <table className="w-full text-left">
             <thead>
@@ -105,20 +131,19 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </tr>
             </thead>
             <tbody>
-              {currentItems.map((p: any) => (
-                <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+              {currentProjects.map((p: any) => (
+                <tr key={p.id} className="group border-b border-slate-50 hover:bg-slate-50 transition-all">
                   <td className="px-10 py-6">
                     <div className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                      {p.image_url ? (
-                        <img src={p.image_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold italic">IMG</div>
-                      )}
+                      {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-300 font-bold">IMG</div>}
                     </div>
                   </td>
                   <td className="px-10 py-6 italic font-black text-slate-700 text-lg uppercase tracking-tighter">{p.name}</td>
                   <td className="px-10 py-6 text-right">
-                    <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest hover:mr-1 transition-all">Revisar →</button>
+                    <div className="flex gap-4 justify-end items-center">
+                      <button onClick={(e) => handleDeleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 transition-colors">✕</button>
+                      <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest">Revisar →</button>
+                    </div>
                   </td>
                 </tr>
               ))}
