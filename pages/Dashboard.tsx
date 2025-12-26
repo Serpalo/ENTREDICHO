@@ -5,7 +5,7 @@ import { supabase } from '../supabase';
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // Referencia para el selector de archivos
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const safeProjects = Array.isArray(projects) ? projects : [];
@@ -13,33 +13,33 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const currentFolder = safeFolders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
-  // --- FUNCIÓN PARA CREAR CARPETA ---
+  // --- FUNCIÓN CREAR CARPETA ---
   const handleCreateFolder = async () => {
     const name = prompt("Nombre de la nueva carpeta:");
     if (!name) return;
     const { error } = await supabase
       .from('folders')
       .insert([{ name, parent_id: folderId ? parseInt(folderId) : null }]);
-    if (error) alert(error.message);
+    if (error) alert("Error: " + error.message);
     else if (onRefresh) await onRefresh();
   };
 
-  // --- FUNCIÓN PARA BORRAR CARPETA ---
+  // --- FUNCIÓN BORRAR CARPETA ---
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar esta carpeta?")) {
       const { error } = await supabase.from('folders').delete().eq('id', id);
-      if (error) alert(error.message);
+      if (error) alert("Error: " + error.message);
       else if (onRefresh) await onRefresh();
     }
   };
 
-  // --- FUNCIÓN PARA SUBIR FOLLETO (PROYECTO) ---
+  // --- FUNCIÓN SUBIR FOLLETO (PROYECTO) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 1. Subimos la referencia a la tabla 'projects'
+    // Insertamos el nombre del archivo en la tabla 'projects'
     const { error } = await supabase
       .from('projects')
       .insert([{ 
@@ -48,10 +48,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       }]);
 
     if (error) {
-      alert("Error al subir folleto: " + error.message);
+      alert("Error de Supabase al subir: " + error.message);
     } else {
       if (onRefresh) await onRefresh();
-      alert("Folleto subido con éxito");
+      alert("Folleto '" + file.name + "' registrado con éxito");
     }
   };
 
@@ -63,7 +63,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
         </div>
         <nav className="flex flex-col gap-4">
-          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer">
+          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600">
             <span>🏠</span> Inicio
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
@@ -82,17 +82,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           <div className="flex gap-4">
             <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
             
-            {/* BOTÓN SUBIR FOLLETO CON INPUT OCULTO */}
+            {/* INPUT DE ARCHIVO OCULTO */}
             <input 
               type="file" 
               ref={fileInputRef} 
               onChange={handleFileUpload} 
               className="hidden" 
-              accept="image/*,.pdf"
+              accept=".pdf,image/*" 
             />
+            
             <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200"
+              onClick={() => fileInputRef.current?.click()} 
+              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 active:scale-95 transition-transform"
             >
               SUBIR FOLLETO
             </button>
@@ -100,7 +101,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
-          {/* CARPETAS */}
+          {/* RENDER CARPETAS */}
           {safeFolders
             .filter((f: any) => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id)
             .map((f: any) => (
@@ -111,7 +112,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               </div>
             ))}
 
-          {/* PROYECTOS (FOLLETOS) */}
+          {/* RENDER PROYECTOS/FOLLETOS */}
           {safeProjects
             .filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
             .map((p: any) => (
@@ -119,7 +120,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <div className="aspect-[3/4] rounded-[1.8rem] overflow-hidden mb-4 bg-slate-50 flex items-center justify-center border border-slate-100 w-full">
                   <span className="text-4xl opacity-10">📄</span>
                 </div>
-                <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full">{p.name}</h3>
+                <h3 className="font-black text-[11px] uppercase text-slate-800 text-center truncate w-full px-2">{p.name}</h3>
               </div>
             ))}
         </div>
