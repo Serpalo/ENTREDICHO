@@ -28,7 +28,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
-  // AUTO-SELECCIÓN DE ÚLTIMA VERSIÓN
+  // AUTO-SELECCIÓN ÚLTIMA VERSIÓN
   useEffect(() => {
     if (availableVersions.length > 0) {
       const maxVersion = availableVersions[availableVersions.length - 1];
@@ -38,36 +38,43 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE COMENTARIOS (LÓGICA RESTAURADA QUE FUNCIONABA) ---
+  // --- CARGA DE COMENTARIOS (VUELTA AL CÓDIGO QUE FUNCIONABA) ---
   const loadComments = async () => {
-    // Usamos los IDs tal cual vienen, sin forzar parseInt por si acaso, para evitar errores
+    // Obtenemos los IDs numéricos de TODOS los folletos en esta carpeta
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     
     if (pageIds.length === 0) return;
 
+    // Pedimos a Supabase todos los comentarios que coincidan con estos IDs
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .in('page_id', pageIds)
       .order('created_at', { ascending: true });
       
-    if (error) console.error("Error buscando comentarios en dashboard:", error);
-    if (data) setComments(data);
+    if (error) {
+      console.error("Error cargando notas:", error);
+    } else {
+      setComments(data || []);
+    }
   };
 
+  // Recargamos siempre que cambie algo importante
   useEffect(() => {
     loadComments();
-    const timer = setTimeout(() => loadComments(), 1000);
+    const timer = setTimeout(() => loadComments(), 1000); // Doble check de seguridad
     return () => clearTimeout(timer);
   }, [projects.length, selectedVersion]);
 
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
+    // Actualización visual inmediata (Optimista)
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
+    // Actualización real
     await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
     loadComments();
   };
 
-  // --- FUNCIONES DE CARPETAS Y ELIMINACIÓN ---
+  // --- FUNCIONES BÁSICAS ---
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar este folleto?")) {
@@ -79,7 +86,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
-  // --- SUBIDA DE ARCHIVOS (NUCLEAR - ARREGLADA) ---
+  // --- SUBIDA DE ARCHIVOS (ARREGLADA PARA EVITAR ERROR 'INVALID KEY') ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -90,27 +97,32 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // 1. LIMPIEZA TOTAL DEL NOMBRE (Evita error Invalid Key)
-      const fileExt = file.name.split('.').pop();
-      const paddedIndex = String(i + 1).padStart(3, '0');
-      // Nombre interno seguro: solo números y extensión
-      const safeStorageName = `${uploadTimestamp}-${paddedIndex}.${fileExt}`;
+      // 1. LIMPIEZA DE NOMBRE (Esto arregla el error de subida)
+      // Convertimos "Página" en "Pagina" y quitamos símbolos raros para el servidor
+      const sanitizedName = file.name
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quita tildes
+        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Quita espacios y símbolos raros
 
+      const paddedIndex = String(i + 1).padStart(3, '0');
+      const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
+
+      // 2. Subimos con el nombre LIMPIO
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
       
       if (uploadError) { 
-        alert("Error al subir: " + uploadError.message); 
+        alert("Error al subir (intenta cambiar el nombre del archivo): " + uploadError.message); 
         continue; 
       }
       
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
+      // 3. Guardamos con el nombre ORIGINAL (para que tú lo veas bonito con tildes)
       await supabase.from('projects').insert([{ 
-        name: file.name, // Nombre original para que tú lo veas bien
+        name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null, 
         image_url: publicUrlData.publicUrl, 
         version: nextVersion, 
-        storage_name: safeStorageName // Nombre seguro para el sistema
+        storage_name: safeStorageName 
       }]);
     }
     
@@ -201,7 +213,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 </thead>
                 <tbody>
                   {currentItems.map((p: any) => {
-                    // FILTRO SEGURO: Convertimos a string para comparar, así no fallamos por tipos
+                    // Filtro SEGURO a String para evitar problemas de tipo
                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                     const pendingCount = myComments.filter(c => !c.resolved).length;
                     
