@@ -9,13 +9,12 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  // Título dinámico: Muestra el nombre de la carpeta (ej: UNICO)
   const currentFolder = folders.find((f: any) => String(f.id) === String(folderId));
   const pageTitle = folderId && currentFolder ? currentFolder.name.toUpperCase() : "MIS PROYECTOS";
 
   const handleDelete = async (e: any, table: string, id: string) => {
     e.stopPropagation();
-    if (window.confirm("¿Eliminar permanentemente?")) {
+    if (window.confirm("¿Eliminar para siempre?")) {
       if (table === 'projects') await supabase.from('pages').delete().eq('project_id', id);
       await supabase.from(table).delete().eq('id', id);
       onRefresh();
@@ -33,7 +32,6 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-        {/* CARPETAS */}
         {folders.filter((f: any) => folderId ? String(f.parentId) === String(folderId) : !f.parentId).map((f: any) => (
           <div key={f.id} className="relative group">
             <div onClick={() => navigate(`/folder/${f.id}`)} className="bg-white p-10 rounded-[2.5rem] border-2 cursor-pointer flex flex-col items-center hover:shadow-2xl transition-all">
@@ -43,8 +41,6 @@ const Dashboard = ({ projects, folders, onRefresh }: any) => {
             <button onClick={(e) => handleDelete(e, 'folders', f.id)} className="absolute -top-2 -right-2 bg-rose-600 text-white w-10 h-10 rounded-full border-4 border-white font-bold z-50">✕</button>
           </div>
         ))}
-
-        {/* PROYECTOS */}
         {projects.filter((p: any) => folderId ? String(p.parentId) === String(folderId) : !p.parentId).map((p: any) => (
           <div key={p.id} className="relative group">
             <div onClick={() => navigate(`/project/${p.id}`)} className="bg-white p-5 rounded-[2.5rem] border-2 cursor-pointer flex flex-col h-full hover:shadow-2xl transition-all">
