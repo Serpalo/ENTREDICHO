@@ -36,7 +36,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Registramos el folleto en la tabla projects
     const { error } = await supabase
       .from('projects')
       .insert([{ 
@@ -45,22 +44,23 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       }]);
 
     if (error) {
-      alert("Fallo al subir: " + error.message);
+      alert("Error al subir: " + error.message);
     } else {
       if (onRefresh) await onRefresh();
-      alert("¡Folleto '" + file.name + "' subido con éxito!");
+      alert("Folleto subido: " + file.name);
     }
     if (event.target) event.target.value = '';
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
+      {/* SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-2">
           <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-8" />
         </div>
         <nav className="flex flex-col gap-4">
-          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer hover:text-rose-600">
+          <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-600 font-bold text-sm cursor-pointer">
             <span>🏠</span> Inicio
           </div>
           <div className="mt-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Carpetas</div>
@@ -72,15 +72,24 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </nav>
       </div>
 
+      {/* CONTENIDO */}
       <div className="flex-1 p-10">
-        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
+        <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600 relative z-20">
           <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter italic">{pageTitle}</h1>
-          <div className="flex gap-4">
-            <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
+          <div className="flex gap-4 relative z-30">
+            <button onClick={handleCreateFolder} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm cursor-pointer hover:bg-slate-50 transition-all">
+              + CARPETA
+            </button>
+            
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,image/*" />
+            
             <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 active:scale-95 transition-transform"
+              onClick={() => {
+                console.log("Botón pulsado");
+                fileInputRef.current?.click();
+              }} 
+              className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg shadow-rose-200 cursor-pointer hover:scale-105 active:scale-95 transition-all relative z-50"
+              style={{ pointerEvents: 'auto' }}
             >
               SUBIR FOLLETO
             </button>
