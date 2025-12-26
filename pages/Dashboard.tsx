@@ -38,13 +38,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- CARGA DE COMENTARIOS (Versión Robusta) ---
+  // --- CARGA DE COMENTARIOS ---
   const loadComments = async () => {
-    // 1. Obtenemos IDs de todo lo que hay en la carpeta
     const pageIds = allItemsInFolder.map((p: any) => p.id);
+    
     if (pageIds.length === 0) return;
 
-    // 2. Pedimos las notas
     const { data, error } = await supabase
       .from('comments')
       .select('*')
@@ -67,7 +66,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
     // Cambio visual inmediato
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
-    // Cambio en base de datos
+    // Cambio en BD
     await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
     loadComments();
   };
@@ -94,7 +93,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     } 
   };
   
-  // --- SUBIDA DE ARCHIVOS (ARREGLADA: Renombra para evitar error de tildes) ---
+  // --- SUBIDA ARREGLADA (SANITIZACIÓN DE NOMBRE) ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -105,16 +104,16 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // 1. LIMPIEZA DE NOMBRE: "Página" -> "Pagina"
-      // Esto evita el error "Invalid Key" de Supabase
+      // 1. LIMPIEZA: Quitamos tildes para el nombre del archivo en la nube
+      // "Página" se convierte en "Pagina" -> Adios error Invalid Key
       const sanitizedName = file.name
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quita tildes
-        .replace(/[^a-zA-Z0-9._-]/g, "_"); // Quita símbolos raros
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
 
       const paddedIndex = String(i + 1).padStart(3, '0');
-      // Nombre interno SEGURO (sin tildes)
       const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
 
+      // 2. Subimos el archivo con el nombre seguro
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
       
       if (uploadError) { 
@@ -124,7 +123,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
-      // Guardamos con el nombre ORIGINAL para que en la lista se vea bonito (con tildes)
+      // 3. Guardamos en BD con el nombre ORIGINAL (para que se vea bonito con tilde en la lista)
       await supabase.from('projects').insert([{ 
         name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null, 
@@ -196,7 +195,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
-        {/* CARPETAS INTERIORES */}
         {currentFolders.length > 0 && (
           <div className="grid grid-cols-4 gap-6 mb-10">
             {currentFolders.map(f => (
@@ -209,7 +207,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         )}
 
-        {/* LISTA DE ARCHIVOS */}
         {currentItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 opacity-50">
             <span className="text-6xl mb-4">📂</span>
@@ -229,7 +226,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 </thead>
                 <tbody>
                   {currentItems.map((p: any) => {
-                    // FILTRO DE COMENTARIOS
+                    // LÓGICA DE COMENTARIOS RECUPERADA
                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                     const pendingCount = myComments.filter(c => !c.resolved).length;
                     
@@ -245,7 +242,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                         </td>
                         <td className="px-4 py-6 align-top">
                           <div className="flex flex-col gap-2">
-                            {/* AVISO SUPERIOR */}
+                            {/* AVISOS DE ESTADO (PENDIENTES / HECHO) */}
                             {pendingCount > 0 ? (
                               <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-50 w-fit px-2 py-0.5 rounded">
                                 ⚠️ {pendingCount} PENDIENTES
@@ -258,7 +255,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                               <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
                             )}
 
-                            {/* LISTA DE NOTAS (COLORES FUERTES) */}
+                            {/* LISTA DE NOTAS CON COLORES FUERTES */}
                             {myComments.map(c => (
                                 <div 
                                   key={c.id} 
