@@ -16,33 +16,31 @@ const ProjectDetail = ({ projects = [] }: any) => {
   // ESTADOS VISUALES
   const [newCoords, setNewCoords] = useState<{x: number, y: number} | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(1); // 1 = Ver entera (Fit)
+  const [zoomLevel, setZoomLevel] = useState(1);
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // CARGAR CORRECCIONES
   const loadCorrections = async () => {
     if (!projectId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('comments')
       .select('*')
-      .eq('page_id', projectId)
+      .eq('page_id', parseInt(projectId)) // CORRECCIÓN 1: Aseguramos que sea número
       .order('created_at', { ascending: false });
+      
+    if (error) console.error("Error cargando notas:", error);
     setCorrections(data || []);
   };
 
   useEffect(() => { loadCorrections(); }, [projectId]);
 
-  // MANEJO DE CLIC EN IMAGEN (Detecta coordenadas relativas %)
+  // MANEJO DE CLIC EN IMAGEN
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
-    
-    // Las coordenadas deben ser relativas a la IMAGEN, no a la pantalla
-    // Si hay zoom, rect.width y rect.height cambian, pero el cálculo % sigue siendo válido
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
-    
     setNewCoords({ x, y });
   };
 
@@ -55,27 +53,42 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setLoading(true);
     let fileUrl = "";
 
-    if (selectedFile) {
-      const fileName = `nota-${Date.now()}-${selectedFile.name}`;
-      await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
-      const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
-      fileUrl = data.publicUrl;
+    try {
+      if (selectedFile) {
+        const fileName = `nota-${Date.now()}-${selectedFile.name}`;
+        const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
+        if (uploadError) throw uploadError;
+        
+        const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
+        fileUrl = data.publicUrl;
+      }
+
+      // CORRECCIÓN 2: Enviamos los datos con el formato exacto y capturamos errores
+      const { error: insertError } = await supabase.from('comments').insert([{
+        page_id: projectId ? parseInt(projectId) : null, // IMPORTANTE: Convertir a número
+        content: newNote || "Corrección visual",
+        attachment_url: fileUrl,
+        resolved: false,
+        x: newCoords?.x || null,
+        y: newCoords?.y || null
+      }]);
+
+      if (insertError) {
+        alert("Error al guardar: " + insertError.message); // AQUÍ VEREMOS SI FALLA
+        console.error(insertError);
+      } else {
+        // Si todo va bien, limpiamos
+        setNewNote("");
+        setSelectedFile(null);
+        setNewCoords(null);
+        await loadCorrections();
+      }
+
+    } catch (err: any) {
+      alert("Ha ocurrido un error inesperado: " + err.message);
+    } finally {
+      setLoading(false);
     }
-
-    await supabase.from('comments').insert([{
-      page_id: projectId,
-      content: newNote || "Corrección visual",
-      attachment_url: fileUrl,
-      resolved: false,
-      x: newCoords?.x || null,
-      y: newCoords?.y || null
-    }]);
-
-    setNewNote("");
-    setSelectedFile(null);
-    setNewCoords(null);
-    await loadCorrections();
-    setLoading(false);
   };
 
   const toggleCheck = async (id: string, currentResolved: boolean) => {
@@ -95,7 +108,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       
-      {/* 1. CABECERA (Fija arriba) */}
+      {/* CABECERA */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
           <button onClick={() => navigate(-1)} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs uppercase hover:bg-slate-200 transition-all">
@@ -106,7 +119,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
           </h2>
         </div>
         
-        {/* Controles de Zoom en Cabecera */}
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
           <button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded-md shadow-sm text-slate-600 font-bold hover:text-rose-600">-</button>
           <span className="text-[10px] font-black w-12 text-center text-slate-500">
@@ -120,37 +132,27 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
       </div>
 
-      {/* 2. CONTENIDO PRINCIPAL (Grid dividido) */}
+      {/* CONTENIDO PRINCIPAL */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* IZQUIERDA: VISOR DE IMAGEN (Con Zoom y Pan) */}
+        {/* VISOR DE IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8">
-            {/* Contenedor relativo para posicionar chinchetas */}
             <div 
               ref={imageContainerRef}
               onClick={handleImageClick}
               className="relative shadow-2xl bg-white transition-all duration-300 ease-out cursor-crosshair group"
               style={{ 
-                // TRUCO DEL ZOOM:
-                // Si zoom es 1: maxHeight 100% (se ve entera)
-                // Si zoom > 1: width fijo multiplicado (se sale y hace scroll)
                 width: zoomLevel === 1 ? 'auto' : `${zoomLevel * 100}%`,
                 height: zoomLevel === 1 ? '100%' : 'auto',
                 maxWidth: zoomLevel === 1 ? '100%' : 'none',
               }}
             >
               {project.image_url ? (
-                <img 
-                  src={project.image_url} 
-                  alt="Folleto" 
-                  className="w-full h-full object-contain block" 
-                  draggable={false}
-                />
+                <img src={project.image_url} alt="Folleto" className="w-full h-full object-contain block" draggable={false} />
               ) : (
                 <div className="w-[500px] h-[700px] flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>
               )}
 
-              {/* Chinchetas */}
               {corrections.map(c => c.x !== null && c.y !== null && !c.resolved && (
                 <div 
                   key={c.id}
@@ -163,7 +165,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 </div>
               ))}
 
-              {/* Chincheta Nueva */}
               {newCoords && (
                 <div 
                   className="absolute w-8 h-8 bg-rose-500/80 animate-pulse rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30"
@@ -175,10 +176,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
             </div>
         </div>
 
-        {/* DERECHA: BARRA LATERAL DE NOTAS (Fija y con scroll interno) */}
+        {/* BARRA LATERAL */}
         <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
-          
-          {/* Formulario Nuevo (Fijo arriba) */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/50">
              <div className="flex justify-between items-center mb-3">
                <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
@@ -203,12 +202,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
              </div>
           </div>
 
-          {/* LISTA DE NOTAS (Esta zona hace scroll) */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
             {corrections.length === 0 && (
-              <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">
-                Sin correcciones
-              </div>
+              <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>
             )}
             
             {corrections.map((c) => (
@@ -228,15 +224,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-slate-300 hover:border-rose-400"}`}>
                     {c.resolved && "✓"}
                   </button>
-                  
                   <div className="flex-1">
                     <p className={`text-sm font-bold text-slate-700 leading-snug ${c.resolved && "line-through text-slate-400"}`}>{c.content}</p>
-                    
                     <div className="flex flex-wrap gap-2 mt-2 items-center">
                       {c.x !== null && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase">🎯 Mapa</span>}
                       {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase hover:bg-slate-200">📎 Adjunto</a>}
                     </div>
-                    
                     <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-50">
                        <span className="text-[9px] text-slate-300 font-bold">{new Date(c.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                        <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
@@ -246,7 +239,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
               </div>
             ))}
           </div>
-
         </div>
       </div>
     </div>
