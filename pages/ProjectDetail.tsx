@@ -58,8 +58,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
       </div>
 
       <div className="grid grid-cols-12 gap-10">
-        <div className="col-span-7 bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 sticky top-10">
-          <img src={project.image_url} alt="Folleto" className="w-full h-auto rounded-[2rem] shadow-inner" />
+        <div className="col-span-7 bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 h-fit sticky top-10">
+          {project.image_url ? (
+            <img src={project.image_url} alt="Folleto" className="w-full h-auto rounded-[2rem] shadow-inner" />
+          ) : (
+            <div className="aspect-[3/4] bg-slate-100 rounded-[2rem] flex items-center justify-center text-slate-300 font-black italic uppercase">Sin imagen</div>
+          )}
         </div>
 
         <div className="col-span-5 space-y-6">
