@@ -1,153 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { supabase } from '../supabase';
+import React from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
-const ProjectDetail: React.FC<any> = ({ projects }) => {
-  const { projectId } = useParams();
+const ProjectDetail = ({ projects = [] }: any) => {
   const navigate = useNavigate();
-  const [isUploading, setIsUploading] = useState(false);
-  const [activeVersionNum, setActiveVersionNum] = useState<number | null>(null);
-  const [pageStats, setPageStats] = useState<Record<string, {total: number, resolved: number}>>({});
+  const { projectId } = useParams();
+  
+  const project = projects.find((p: any) => String(p.id) === String(projectId));
 
-  const project = projects.find((p: any) => p.id === projectId);
+  // Simulamos las páginas del folleto para la vista de lista
+  const pages = [
+    { id: 1, name: "PÁGINA 1", status: "4 Pendientes", color: "bg-rose-100 text-rose-600" },
+    { id: 2, name: "PÁGINA 2", status: "SIN NOTAS", color: "text-slate-400" },
+    { id: 3, name: "PÁGINA 3", status: "SIN NOTAS", color: "text-slate-400" },
+  ];
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!project) return;
-      const { data } = await supabase.from('comments').select('page_id, resolved');
-      if (data) {
-        const stats: any = {};
-        data.forEach((c: any) => {
-          if (!stats[c.page_id]) stats[c.page_id] = { total: 0, resolved: 0 };
-          stats[c.page_id].total++;
-          if (c.resolved) stats[c.page_id].resolved++;
-        });
-        setPageStats(stats);
-      }
-    };
-    fetchStats();
-  }, [project]);
-
-  if (!project) return <div className="p-8 font-black text-slate-400 italic uppercase text-xs">Sincronizando...</div>;
-
-  const sortedVersions = [...project.versions].sort((a, b) => b.versionNumber - a.versionNumber);
-  const currentVersion = activeVersionNum 
-    ? project.versions.find((v: any) => v.versionNumber === activeVersionNum) 
-    : sortedVersions[0];
-
-  const getCorrectionName = (num: number) => {
-    if (num === 1) return "1ª CORRECCIÓN";
-    if (num === 2) return "2ª CORRECCIÓN";
-    if (num === 3) return "3ª CORRECCIÓN";
-    return `${num}ª CORRECCIÓN`;
-  };
-
-  const handleUploadNewVersion = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = async (e: any) => {
-      const files = Array.from(e.target.files);
-      setIsUploading(true);
-      const nextVer = project.versions.length + 1;
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i] as File;
-        const fileName = `v${nextVer}-${Date.now()}-${file.name}`;
-        await supabase.storage.from('brochures').upload(fileName, file);
-        const { data: url } = supabase.storage.from('brochures').getPublicUrl(fileName);
-        await supabase.from('pages').insert([{ project_id: project.id, image_url: url.publicUrl, page_number: i + 1, version: nextVer }]);
-      }
-      window.location.reload();
-    };
-    input.click();
-  };
+  if (!project) return <div className="p-10">Cargando proyecto...</div>;
 
   return (
-    <div className="p-8 bg-slate-50 min-h-full font-sans">
-      <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="text-slate-400 hover:text-slate-600 font-bold uppercase text-[10px] tracking-widest transition-colors">← Volver</button>
-          <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none">{project.name}</h1>
-        </div>
-        <button onClick={handleUploadNewVersion} disabled={isUploading} className="bg-rose-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all">
-          {isUploading ? 'Subiendo...' : '📂 Nueva Versión'}
-        </button>
+    <div className="min-h-screen bg-slate-50 font-sans p-10">
+      {/* CABECERA DE VERSIONES */}
+      <div className="flex gap-4 mb-10">
+        <button onClick={() => navigate(-1)} className="mr-4 text-slate-400 hover:text-slate-800">← Volver</button>
+        <button className="px-6 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-400 text-xs">VERSIÓN 1</button>
+        <button className="px-6 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-400 text-xs">VERSIÓN 2</button>
+        <button className="px-6 py-2 bg-[#1e293b] text-white rounded-xl font-bold text-xs shadow-lg">VERSIÓN 3</button>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
-        {/* SELECTOR DE VERSIONES */}
-        <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-200 flex items-center gap-3">
-          {project.versions.map((v: any) => (
-            <button
-              key={v.id}
-              onClick={() => setActiveVersionNum(v.versionNumber)}
-              className={`px-6 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all border-2 ${
-                currentVersion?.versionNumber === v.versionNumber 
-                ? 'bg-slate-800 text-white border-slate-800 shadow-lg' 
-                : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              V{v.versionNumber}
-            </button>
-          ))}
-        </div>
-
-        <table className="w-full">
+      <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden border border-slate-100">
+        <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 bg-white">
-              <th className="px-8 py-5 text-left w-32">Vista</th>
-              <th className="px-8 py-5 text-left">Página</th>
-              <th className="px-8 py-5 text-center">Estado</th>
-              <th className="px-8 py-5 text-center">Correcciones</th>
-              <th className="px-8 py-5 text-right">Acción</th>
+            <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <th className="px-10 py-6">Vista</th>
+              <th className="px-10 py-6">Página</th>
+              <th className="px-10 py-6 text-center">Correcciones</th>
+              <th className="px-10 py-6 text-right">Acción</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50 bg-white">
-            {currentVersion?.pages.map((page: any) => {
-              const stats = pageStats[page.id] || { total: 0, resolved: 0 };
-              const pending = stats.total - stats.resolved;
-              return (
-                <tr key={page.id} className="group hover:bg-slate-50/80 transition-all">
-                  <td className="px-8 py-5">
-                    <div 
-                      onClick={() => navigate(`/project/${project.id}/version/${currentVersion.id}/page/${page.id}`)}
-                      className="w-16 h-20 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:border-rose-400 hover:scale-105 transition-all duration-300"
-                    >
-                      <img src={page.imageUrl} className="w-full h-full object-cover" alt="" />
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className="font-black text-slate-800 uppercase text-sm tracking-tight">Página {page.pageNumber}</span>
-                  </td>
-                  {/* COLUMNA ESTADO SEPARADA */}
-                  <td className="px-8 py-5 text-center">
-                    <span className="text-rose-600 font-black text-[10px] tracking-widest uppercase">
-                      {getCorrectionName(currentVersion.versionNumber)}
-                    </span>
-                  </td>
-                  {/* COLUMNA CORRECCIONES SEPARADA */}
-                  <td className="px-8 py-5 text-center">
-                    {stats.total === 0 ? (
-                      <span className="text-slate-300 text-[9px] font-black uppercase tracking-widest italic">Sin notas</span>
-                    ) : pending === 0 ? (
-                      <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-emerald-100">✓ Revisado</span>
-                    ) : (
-                      <span className="bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-[10px] font-black border border-rose-100">
-                        {pending} Pendientes
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <button 
-                      onClick={() => navigate(`/project/${project.id}/version/${currentVersion.id}/page/${page.id}`)}
-                      className="text-rose-600 font-black text-[10px] uppercase tracking-widest group-hover:translate-x-1 transition-transform inline-block"
-                    >
-                      Entrar →
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+          <tbody>
+            {pages.map((page) => (
+              <tr key={page.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors group">
+                <td className="px-10 py-6">
+                  <div className="w-16 h-20 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:scale-105 transition-transform">
+                    <span className="text-[8px] text-slate-300">PREVISUALIZACIÓN</span>
+                  </div>
+                </td>
+                <td className="px-10 py-6">
+                  <span className="font-black text-slate-700 tracking-tighter text-lg italic">{page.name}</span>
+                </td>
+                <td className="px-10 py-6 text-center">
+                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${page.color}`}>
+                    {page.status}
+                  </span>
+                </td>
+                <td className="px-10 py-6 text-right">
+                  <button className="text-rose-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-1 ml-auto hover:gap-2 transition-all">
+                    Revisar <span className="text-sm">→</span>
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
