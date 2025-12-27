@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { jsPDF } from "jspdf";
 
+// Tipo para definir las herramientas disponibles
+type DrawingTool = 'pen' | 'highlighter';
+
 const ProjectDetail = ({ projects = [] }: any) => {
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -13,7 +16,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // REFERENCIA PARA EL AUTO-FOCO
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // 1. IDENTIFICAR PROYECTO ACTUAL
@@ -77,11 +79,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
     projects.find((p: any) => String(p.id) === String(compareTargetId)),
   [projects, compareTargetId]);
 
-  // ESTADOS DIBUJO
+  // --- ESTADOS DIBUJO MEJORADOS ---
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  // Nuevo estado para saber qué herramienta usamos
+  const [activeTool, setActiveTool] = useState<DrawingTool>('pen'); 
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
-  const [tempDrawings, setTempDrawings] = useState<string[]>([]);
+  // TempDrawings ahora guarda el path Y la herramienta usada
+  const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // CARGA DE NOTAS
@@ -118,15 +123,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
         if (yPosition > 270) { doc.addPage(); yPosition = 20; }
         
         let statusText = "[PENDIENTE]";
-        // Colores: Verde (Resuelto), Azul (General), Rojo (Pendiente normal)
         if (c.resolved) {
-            doc.setTextColor(22, 163, 74); // Verde
+            doc.setTextColor(22, 163, 74);
             statusText = "[HECHO]";
         } else if (c.is_general) {
-            doc.setTextColor(37, 99, 235); // Azul
+            doc.setTextColor(37, 99, 235);
             statusText = "[GENERAL]";
         } else {
-            doc.setTextColor(225, 29, 72); // Rojo
+            doc.setTextColor(225, 29, 72);
             statusText = "[PENDIENTE]";
         }
 
@@ -145,7 +149,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         doc.text(splitText, 15, yPosition);
         
         let extraInfo = [];
-        if (c.drawing_data) extraInfo.push("Contiene dibujo en imagen");
+        if (c.drawing_data) extraInfo.push("Contiene dibujo/subrayado");
         if (c.attachment_url) extraInfo.push("Contiene archivo adjunto");
         if(extraInfo.length > 0) {
             yPosition += (splitText.length * 4) + 2;
@@ -178,14 +182,16 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
-  // AUTO-FOCO
+  // --- LÓGICA DE PUNTERO MEJORADA ---
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
+
     if (isDrawingMode) {
         setIsDrawing(true);
         const { x, y } = getRelativeCoords(e);
         setCurrentPath(`M ${x} ${y}`);
-        e.preventDefault();
+        // Importante: en móviles, evita que se mueva la pantalla al dibujar
+        e.preventDefault(); 
     } else {
         const { x, y } = getRelativeCoords(e);
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
@@ -197,19 +203,22 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   const handlePointerMove = (e: any) => {
     if (!isDrawing || !isDrawingMode) return;
+    // Prevenir scroll en móviles mientras se dibuja
+    e.preventDefault(); 
     const { x, y } = getRelativeCoords(e);
     setCurrentPath(prev => `${prev} L ${x} ${y}`);
   };
 
   const handlePointerUp = () => {
     if (isDrawing && isDrawingMode && currentPath) {
-        setTempDrawings(prev => [...prev, currentPath]);
+        // Guardamos el path junto con la herramienta que se usó
+        setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]);
         setCurrentPath("");
     }
     setIsDrawing(false);
   };
 
-  // --- FUNCIÓN GUARDAR MODIFICADA PARA ACEPTAR TIPO GENERAL ---
+  // --- GUARDAR NOTA (Actualizado con drawing_tool) ---
   const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
@@ -225,17 +234,21 @@ const ProjectDetail = ({ projects = [] }: any) => {
         fileUrl = data.publicUrl;
       }
 
-      const drawingDataString = tempDrawings.length > 0 ? tempDrawings.join('|') : null;
+      // Extraemos solo los paths para guardarlos juntos
+      const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null;
+      // Usamos la herramienta del último dibujo hecho (o 'pen' por defecto)
+      const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen';
 
       const { error: insertError } = await supabase.from('comments').insert([{
         page_id: projectId,
         content: newNote,
         attachment_url: fileUrl,
         resolved: false,
-        is_general: isGeneral, // GUARDAMOS SI ES GENERAL
+        is_general: isGeneral,
         x: newCoords?.x || null,
         y: newCoords?.y || null,
-        drawing_data: drawingDataString
+        drawing_data: drawingDataString,
+        drawing_tool: usedTool, // <-- NUEVO CAMPO EN DB
       }]);
 
       if (insertError) alert("Error al guardar: " + insertError.message);
@@ -245,7 +258,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
         setNewCoords(null);
         setTempDrawings([]); 
         setCurrentPath("");
-        setIsDrawingMode(false);
+        // No desactivamos isDrawingMode para poder seguir dibujando si se quiere
+        // setIsDrawingMode(false); 
         loadCorrections(); 
       }
     } catch (err: any) {
@@ -266,6 +280,16 @@ const ProjectDetail = ({ projects = [] }: any) => {
       await supabase.from('comments').delete().eq('id', id);
       loadCorrections();
     }
+  };
+
+  // Helper para obtener estilos de dibujo
+  const getStrokeStyle = (tool: DrawingTool | string) => {
+      const isHighlighter = tool === 'highlighter';
+      return {
+          color: isHighlighter ? "#fde047" : "#f43f5e", // Amarillo neón vs Rojo
+          width: isHighlighter ? "2" : "0.5", // Grueso vs Fino
+          opacity: isHighlighter ? "0.5" : "1" // Transparente vs Opaco
+      };
   };
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
@@ -342,19 +366,34 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     onPointerMove={handlePointerMove} 
                     onPointerUp={handlePointerUp} 
                     onPointerLeave={handlePointerUp}
-                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`} 
+                    // Cambiamos el cursor dependiendo de la herramienta activa
+                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
                     style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
                 >
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+                      {/* DIBUJOS GUARDADOS */}
                       {corrections.map(c => !c.resolved && c.drawing_data && (
-                          c.drawing_data.split('|').map((path: string, i: number) => (
-                              <path key={`${c.id}-${i}`} d={path} stroke={c.is_general ? "#2563eb" : "#f43f5e"} strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
-                          ))
+                          c.drawing_data.split('|').map((path: string, i: number) => {
+                              // Usamos el estilo guardado en la base de datos
+                              const style = getStrokeStyle(c.drawing_tool || 'pen');
+                              return (
+                                  <path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md" : ""} />
+                              );
+                          })
                       ))}
-                      {tempDrawings.map((path, i) => <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
-                      {currentPath && <path d={currentPath} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+                      
+                      {/* DIBUJOS TEMPORALES (Los que acabas de hacer pero no has guardado) */}
+                      {tempDrawings.map((item, i) => {
+                          const style = getStrokeStyle(item.tool);
+                          return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      })}
+                      
+                      {/* DIBUJO ACTUAL (El que estás haciendo ahora mismo) */}
+                      {currentPath && (
+                          <path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      )}
                   </svg>
 
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
@@ -379,7 +418,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
                     {isDrawingMode ? (
-                        <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-pulse">✏️ Dibujando...</span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : 'text-rose-600 bg-rose-50'}`}>
+                            {activeTool === 'highlighter' ? '🖍️ Subrayando...' : '✏️ Dibujando...'}
+                        </span>
                     ) : newCoords ? (
                         <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
                     ) : null}
@@ -394,15 +435,36 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   />
                   
                   <div className="flex flex-col gap-2">
-                     <div className="flex gap-2">
+                     {/* --- NUEVO: SELECTOR DE HERRAMIENTAS --- */}
+                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
                          <button 
-                            onClick={() => { setIsDrawingMode(!isDrawingMode); setNewCoords(null); }}
-                            className={`p-3 rounded-lg border transition-all ${isDrawingMode ? 'bg-rose-600 text-white border-rose-600 shadow-inner' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                            title="Dibujar en imagen"
+                            onClick={() => { 
+                                setIsDrawingMode(true); 
+                                setActiveTool('pen'); 
+                                setNewCoords(null); 
+                            }}
+                            className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-rose-600 border-rose-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`}
+                            title="Bolígrafo (línea fina)"
                          >
-                            ✏️
+                            ✏️ Boli
                          </button>
+                         <button 
+                            onClick={() => { 
+                                setIsDrawingMode(true); 
+                                setActiveTool('highlighter'); 
+                                setNewCoords(null); 
+                            }}
+                            className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`}
+                            title="Subrayador (línea gruesa transparente)"
+                         >
+                            🖍️ Subrayador
+                         </button>
+                         {isDrawingMode && (
+                             <button onClick={() => setIsDrawingMode(false)} className="px-2 text-slate-400 hover:text-slate-600" title="Cancelar dibujo">✕</button>
+                         )}
+                     </div>
 
+                     <div className="flex gap-2 mt-1">
                          <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                          <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}>
                              <span>📎</span>
@@ -413,7 +475,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                          </button>
                      </div>
                      
-                     {/* --- BOTÓN DE MODIFICACIÓN GENERAL --- */}
                      <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">
                          MODIFICACIÓN GENERAL
                      </button>
