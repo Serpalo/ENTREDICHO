@@ -11,32 +11,25 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [newNote, setNewNote] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  
-  // Buscar proyecto (asegurando comparación de texto por si acaso)
   const project = projects.find((p: any) => String(p.id) === String(projectId));
 
   // ESTADOS VISUALES
   const [newCoords, setNewCoords] = useState<{x: number, y: number} | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
-  
-  // Comparador
   const [isComparing, setIsComparing] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareProject, setCompareProject] = useState<any>(null);
-
+  
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- 1. CARGA DE DATOS SEGURA (Convirtiendo ID a Número) ---
+  // 1. CARGA (SIN parseInt)
   const loadCorrections = async () => {
     if (!projectId) return;
-    // IMPORTANTE: Convertimos a número para que Supabase lo entienda
-    const idAsNumber = parseInt(projectId);
-
     const { data, error } = await supabase
       .from('comments')
       .select('*')
-      .eq('page_id', idAsNumber) 
+      .eq('page_id', projectId) // ID DIRECTO (TEXTO)
       .order('created_at', { ascending: false });
       
     if (error) console.error("Error cargando notas:", error);
@@ -45,68 +38,28 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   useEffect(() => { loadCorrections(); }, [projectId]);
 
-  // --- LÓGICA COMPARADOR ---
+  // Comparador
   useEffect(() => {
     if (project && projects.length > 0) {
-      const sameFolderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
-      const currentVersionProjects = sameFolderProjects.filter((p: any) => p.version === project.version);
-      const prevVersionProjects = sameFolderProjects.filter((p: any) => p.version === (project.version - 1));
-      const myIndex = currentVersionProjects.findIndex((p: any) => p.id === project.id);
-      if (prevVersionProjects[myIndex]) setCompareProject(prevVersionProjects[myIndex]);
+      const sameFolder = projects.filter((p: any) => p.parent_id === project.parent_id);
+      const prevVer = sameFolder.find((p: any) => p.version === (project.version - 1) && p.name === project.name);
+      if (!prevVer) {
+         const currentVerList = sameFolder.filter((p: any) => p.version === project.version);
+         const prevVerList = sameFolder.filter((p: any) => p.version === (project.version - 1));
+         const idx = currentVerList.findIndex((p: any) => p.id === project.id);
+         if (prevVerList[idx]) setCompareProject(prevVerList[idx]);
+      } else {
+         setCompareProject(prevVer);
+      }
     }
   }, [project, projects]);
 
-  const handleSliderMove = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleSliderMove = (e: any) => {
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     setSliderPosition((x / rect.width) * 100);
-  };
-
-  // --- 2. GUARDADO SEGURO (La clave del arreglo) ---
-  const handleAddNote = async () => {
-    if (!newNote && !newCoords) {
-      alert("Escribe una nota o marca un punto en la imagen.");
-      return;
-    }
-    setLoading(true);
-    let fileUrl = "";
-
-    try {
-      if (selectedFile) {
-        const fileName = `nota-${Date.now()}-${selectedFile.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-        const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
-        if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
-        fileUrl = data.publicUrl;
-      }
-
-      // AQUÍ ESTÁ EL FIX: parseInt(projectId)
-      // Esto asegura que enviamos un NÚMERO a la columna int8 de Supabase
-      const { error: insertError } = await supabase.from('comments').insert([{
-        page_id: parseInt(projectId || "0"), 
-        content: newNote || "Corrección visual",
-        attachment_url: fileUrl,
-        resolved: false,
-        x: newCoords?.x || null,
-        y: newCoords?.y || null
-      }]);
-
-      if (insertError) {
-        alert("Error al guardar en Supabase: " + insertError.message);
-      } else {
-        // Si todo va bien, limpiamos y recargamos
-        setNewNote("");
-        setSelectedFile(null);
-        setNewCoords(null);
-        await loadCorrections();
-      }
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -118,6 +71,44 @@ const ProjectDetail = ({ projects = [] }: any) => {
     });
   };
 
+  // 2. GUARDADO (SIN parseInt)
+  const handleAddNote = async () => {
+    if (!newNote && !newCoords) return alert("Escribe algo o marca un punto.");
+    setLoading(true);
+    let fileUrl = "";
+
+    try {
+      if (selectedFile) {
+        const fileName = `nota-${Date.now()}-${selectedFile.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+        const { error } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
+        if (error) throw error;
+        const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
+        fileUrl = data.publicUrl;
+      }
+
+      const { error: insertError } = await supabase.from('comments').insert([{
+        page_id: projectId, // ID DIRECTO (TEXTO)
+        content: newNote,
+        attachment_url: fileUrl,
+        resolved: false,
+        x: newCoords?.x || null,
+        y: newCoords?.y || null
+      }]);
+
+      if (insertError) alert("Error al guardar: " + insertError.message);
+      else {
+        setNewNote("");
+        setSelectedFile(null);
+        setNewCoords(null);
+        loadCorrections();
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleCheck = async (id: string, currentResolved: boolean) => {
     setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
     await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id);
@@ -125,30 +116,27 @@ const ProjectDetail = ({ projects = [] }: any) => {
   };
 
   const deleteComment = async (id: string) => {
-    if (window.confirm("¿Borrar esta nota?")) {
+    if (window.confirm("¿Borrar nota?")) {
       await supabase.from('comments').delete().eq('id', id);
       loadCorrections();
     }
   };
 
-  if (!project) return <div className="h-screen flex items-center justify-center font-black text-slate-300 uppercase">Cargando...</div>;
+  if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
-      {/* CABECERA */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
-          <button onClick={() => navigate(-1)} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs uppercase hover:bg-slate-200">← VOLVER</button>
+          <button onClick={() => navigate(-1)} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200">← VOLVER</button>
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md">{project.name}</h2>
         </div>
-        
         <div className="flex gap-4 items-center">
             {compareProject ? (
-              <button onClick={() => setIsComparing(!isComparing)} className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${isComparing ? "bg-slate-800 text-white" : "bg-white border border-slate-200 text-slate-600"}`}>
-                {isComparing ? "❌ Cerrar Comparador" : "⚖️ Comparar V" + compareProject.version}
+              <button onClick={() => setIsComparing(!isComparing)} className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all ${isComparing ? "bg-slate-800 text-white" : "bg-white border text-slate-600"}`}>
+                {isComparing ? "❌ Cerrar" : "⚖️ Comparar V" + compareProject.version}
               </button>
-            ) : project.version > 1 && <span className="text-[9px] text-slate-300 font-bold">SIN VERSIÓN PREVIA</span>}
-
+            ) : project.version > 1 && <span className="text-[9px] text-slate-300 font-bold">SIN PREVIO</span>}
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
                 <button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">-</button>
                 <span className="text-[10px] font-black w-12 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
@@ -159,17 +147,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* VISOR */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {isComparing && compareProject ? (
-                <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize overflow-hidden group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio: '3/4' }}>
+                <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
                         <img src={compareProject.image_url} className="absolute top-0 left-0 w-[100vw] max-w-none h-full object-contain pointer-events-none" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }} />
                     </div>
-                    <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}>
-                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div>
-                    </div>
+                    <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
                 </div>
             ) : (
                 <div ref={imageContainerRef} onClick={handleImageClick} className="relative shadow-2xl bg-white cursor-crosshair group" style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}>
@@ -182,7 +167,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
             )}
         </div>
 
-        {/* BARRA LATERAL (NOTAS) */}
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
@@ -197,7 +181,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     <button onClick={handleAddNote} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>{loading?"GUARDANDO...":"GUARDAR"}</button>
                  </div>
               </div>
-
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
                 {corrections.map((c) => (
