@@ -7,11 +7,15 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // ESTADOS
+  // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  // AÑADIDO: 'visor' como modo por defecto para ver las flechas nada más entrar
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('visor');
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]); 
+  
+  // AÑADIDO: Estado para controlar la página actual en el modo Visor
+  const [pageIndex, setPageIndex] = useState(0);
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
@@ -19,9 +23,30 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const availableVersions = useMemo(() => { const v = new Set<number>(); allItemsInFolder.forEach((p: any) => v.add(p.version || 1)); return Array.from(v).sort((a, b) => a - b); }, [allItemsInFolder]);
 
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
+  
+  // AÑADIDO: Resetear el índice de página si cambiamos de carpeta o versión
+  useEffect(() => { setPageIndex(0); }, [folderId, selectedVersion]);
+
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // CARGA DE COMENTARIOS
+  // --- NAVEGACIÓN VISOR ---
+  const prevPage = () => { if (pageIndex > 0) setPageIndex(p => p - 1); };
+  const nextPage = () => { if (pageIndex < currentItems.length - 1) setPageIndex(p => p + 1); };
+  
+  // Teclado para las flechas
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (viewMode === 'visor') {
+        if (e.key === 'ArrowLeft') prevPage();
+        if (e.key === 'ArrowRight') nextPage();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [viewMode, pageIndex, currentItems.length]);
+
+
+  // --- CARGA DE COMENTARIOS ---
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
@@ -66,11 +91,71 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     );
   });
 
+  // Helper para renderizar el contenido del Visor (lo nuevo)
+  const renderVisor = () => {
+    if (currentItems.length === 0) return null;
+    const p = currentItems[pageIndex];
+    if (!p) return null; // Por seguridad
+
+    const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+    const pendingCount = myComments.filter(c => !c.resolved).length;
+
+    return (
+      <div className="relative w-full h-full flex flex-col items-center justify-center bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group">
+        
+        {/* FLECHA IZQUIERDA */}
+        <button 
+            onClick={(e) => { e.stopPropagation(); prevPage(); }}
+            disabled={pageIndex === 0}
+            className={`absolute left-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === 0 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
+        >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+
+        {/* IMAGEN CENTRAL */}
+        <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
+             <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
+             
+             {/* Info superpuesta en la imagen */}
+             <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
+                {pendingCount > 0 ? (
+                    <div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>
+                ) : myComments.length > 0 ? (
+                    <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>
+                ) : null}
+             </div>
+        </div>
+
+        {/* INFO INFERIOR Y CONTROLES DE LA PÁGINA ACTUAL */}
+        <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-sm p-4 border-t border-slate-100 flex justify-between items-center">
+             <div className="flex flex-col">
+                <span className="text-[10px] font-black text-slate-400 uppercase">Página {pageIndex + 1} de {currentItems.length}</span>
+                <span className="text-lg font-black italic text-slate-800 uppercase">{p.name}</span>
+             </div>
+             <div className="flex gap-3">
+                <button onClick={(e) => deleteProject(e, p.id)} className="px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-colors">ELIMINAR PÁGINA</button>
+                <button onClick={() => navigate(`/project/${p.id}`)} className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black uppercase hover:scale-105 transition-transform shadow-lg shadow-rose-200">ENTRAR A CORREGIR</button>
+             </div>
+        </div>
+
+        {/* FLECHA DERECHA */}
+        <button 
+            onClick={(e) => { e.stopPropagation(); nextPage(); }}
+            disabled={pageIndex === currentItems.length - 1}
+            className={`absolute right-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === currentItems.length - 1 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
+        >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+
+      </div>
+    );
+  };
+
+
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
         
-        {/* --- CAMBIO AQUÍ: RUTA DIRECTA A PUBLIC --- */}
         <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
         
         <nav className="flex flex-col gap-2">
@@ -87,7 +172,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div className="flex gap-2 mt-2">{availableVersions.map(v => (<button key={v} onClick={() => setSelectedVersion(v)} className={`px-4 py-1 rounded-full text-[10px] font-black uppercase transition-all ${selectedVersion===v?'bg-rose-600 text-white shadow-md scale-105':'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>V{v}</button>))}</div>
           </div>
           <div className="flex gap-4 items-center">
-             <div className="flex bg-slate-100 p-1 rounded-xl mr-2"><button onClick={() => setViewMode('list')} className={`p-3 rounded-lg ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`}>📄</button><button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`}>🧱</button></div>
+             {/* AÑADIDO: Botón para el modo VISOR (El icono del Ojo) */}
+             <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
+                <button onClick={() => setViewMode('visor')} className={`p-3 rounded-lg transition-all ${viewMode==='visor'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Visor">👁️</button>
+                <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
+                <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
+             </div>
+             
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
              <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
@@ -98,6 +189,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
         {currentItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 opacity-50"><span className="text-6xl mb-4">📂</span><p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Carpeta vacía</p></div>
+        ) : viewMode === 'visor' ? (
+            // --- RENDERIZAMOS EL NUEVO MODO VISOR ---
+            renderVisor()
         ) : viewMode === 'list' ? (
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
             <table className="w-full text-left table-fixed">
