@@ -12,10 +12,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // 1. OBTENER PROYECTO ACTUAL Y HERMANOS (Para navegación)
+  // NAVEGACIÓN HERMANOS
   const project = projects.find((p: any) => String(p.id) === String(projectId));
-  
-  // LÓGICA DE NAVEGACIÓN (Anterior / Siguiente)
   const siblings = project 
     ? projects.filter((p: any) => p.parent_id === project.parent_id).sort((a: any, b: any) => a.name.localeCompare(b.name))
     : [];
@@ -30,14 +28,19 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [isComparing, setIsComparing] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareProject, setCompareProject] = useState<any>(null);
+
+  // --- NUEVOS ESTADOS PARA DIBUJO ---
+  const [isDrawingMode, setIsDrawingMode] = useState(false); // ¿Estamos en modo lápiz?
+  const [isDrawing, setIsDrawing] = useState(false); // ¿Está el ratón pulsado dibujando?
+  const [currentPath, setCurrentPath] = useState<string>(""); // Trazo actual
+  const [tempDrawings, setTempDrawings] = useState<string[]>([]); // Dibujos de la nota actual antes de guardar
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // 2. CARGA DE NOTAS (USANDO TEXTO/UUID)
+  // 1. CARGA DE NOTAS
   const loadCorrections = async () => {
     if (!projectId) return;
     
-    // NO usamos parseInt, enviamos el ID tal cual (texto)
     const { data, error } = await supabase
       .from('comments')
       .select('*')
@@ -74,21 +77,56 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setSliderPosition((x / rect.width) * 100);
   };
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isComparing || !imageContainerRef.current) return;
+  // --- LÓGICA DE DIBUJO (MOUSE EVENTS) ---
+  const getRelativeCoords = (e: any) => {
+    if (!imageContainerRef.current) return { x: 0, y: 0 };
     const rect = imageContainerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    // Convertimos a coordenadas relativas 0-100 para que funcione con Zoom
+    const x = ((clientX - rect.left) / rect.width) * 100;
+    const y = ((clientY - rect.top) / rect.height) * 100;
+    return { x, y };
+  };
 
-    // Solo marcamos punto si el click fue dentro de los límites (a veces los bordes engañan)
-    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
-        setNewCoords({ x, y });
+  const handlePointerDown = (e: any) => {
+    if (isComparing) return;
+
+    if (isDrawingMode) {
+        // MODO LÁPIZ: Empezar trazo
+        setIsDrawing(true);
+        const { x, y } = getRelativeCoords(e);
+        setCurrentPath(`M ${x} ${y}`);
+        e.preventDefault(); // Evitar scroll en táctil
+    } else {
+        // MODO PUNTERO: Poner Pin
+        const { x, y } = getRelativeCoords(e);
+        // Solo marcamos si estamos dentro (0-100)
+        if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
+            setNewCoords({ x: x/100, y: y/100 });
+        }
     }
   };
 
-  // 3. GUARDADO DE NOTA CON ADJUNTO
+  const handlePointerMove = (e: any) => {
+    if (!isDrawing || !isDrawingMode) return;
+    const { x, y } = getRelativeCoords(e);
+    setCurrentPath(prev => `${prev} L ${x} ${y}`);
+  };
+
+  const handlePointerUp = () => {
+    if (isDrawing && isDrawingMode && currentPath) {
+        setTempDrawings(prev => [...prev, currentPath]);
+        setCurrentPath("");
+    }
+    setIsDrawing(false);
+  };
+
+  // 2. GUARDADO DE NOTA
   const handleAddNote = async () => {
-    if (!newNote && !newCoords) return alert("Escribe algo o marca un punto.");
+    // Permitimos guardar si hay texto O punto O dibujo
+    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
     let fileUrl = "";
 
@@ -96,14 +134,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
       if (selectedFile) {
         const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
         const fileName = `adjunto-${Date.now()}-${sanitizedName}`;
-        
         const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
-        
         if (uploadError) throw uploadError;
-        
         const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
         fileUrl = data.publicUrl;
       }
+
+      // Preparamos los datos del dibujo (unimos todos los trazos con |)
+      const drawingDataString = tempDrawings.length > 0 ? tempDrawings.join('|') : null;
 
       const { error: insertError } = await supabase.from('comments').insert([{
         page_id: projectId,
@@ -111,18 +149,23 @@ const ProjectDetail = ({ projects = [] }: any) => {
         attachment_url: fileUrl,
         resolved: false,
         x: newCoords?.x || null,
-        y: newCoords?.y || null
+        y: newCoords?.y || null,
+        drawing_data: drawingDataString // GUARDAMOS EL DIBUJO AQUÍ
       }]);
 
       if (insertError) alert("Error al guardar: " + insertError.message);
       else {
+        // Reset total
         setNewNote("");
         setSelectedFile(null);
         setNewCoords(null);
+        setTempDrawings([]); 
+        setCurrentPath("");
+        setIsDrawingMode(false); // Volver a modo normal
         loadCorrections(); 
       }
     } catch (err: any) {
-      alert("Error subiendo archivo: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -171,18 +214,15 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* ZONA CENTRAL (IMAGEN) */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {/* === FLECHA IZQUIERDA (ANTERIOR) === */}
+            {/* FLECHAS DE NAVEGACIÓN */}
             {prevProject && (
-                <button 
-                    onClick={() => navigate(`/project/${prevProject.id}`)}
-                    className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"
-                    title={`Ir a: ${prevProject.name}`}
-                >
+                <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
             )}
 
             {isComparing && compareProject ? (
+                /* MODO COMPARADOR (Sin cambios en lógica de dibujo, solo visualiza) */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
@@ -191,12 +231,40 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
                 </div>
             ) : (
-                <div ref={imageContainerRef} onClick={handleImageClick} className="relative shadow-2xl bg-white cursor-crosshair group transition-transform duration-200 ease-out" style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}>
-                  {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
+                /* MODO EDICIÓN (DIBUJO Y PINES) */
+                <div 
+                    ref={imageContainerRef} 
+                    onPointerDown={handlePointerDown} 
+                    onPointerMove={handlePointerMove} 
+                    onPointerUp={handlePointerUp}
+                    onPointerLeave={handlePointerUp}
+                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`} 
+                    style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
+                >
+                  {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
+                  {/* CAPA DE DIBUJOS (SVG) */}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+                      {/* Dibujos GUARDADOS */}
+                      {corrections.map(c => !c.resolved && c.drawing_data && (
+                          c.drawing_data.split('|').map((path: string, i: number) => (
+                              <path key={`${c.id}-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
+                          ))
+                      ))}
+                      
+                      {/* Dibujos TEMPORALES (Nota actual) */}
+                      {tempDrawings.map((path, i) => (
+                          <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      ))}
+                      {/* Trazo ACTUAL (Mientras dibujas) */}
+                      {currentPath && (
+                          <path d={currentPath} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      )}
+                  </svg>
+
                   {/* PINES GUARDADOS */}
-                  {corrections.map(c => !c.resolved && c.x!=null && (
-                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-10 ${hoveredId===c.id?"bg-rose-600 scale-150 z-20":"bg-rose-500 hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
+                  {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
+                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id?"bg-rose-600 scale-150 z-30":"bg-rose-500 hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
                   
                   {/* PIN NUEVO (TEMPORAL) */}
@@ -204,18 +272,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 </div>
             )}
 
-            {/* === FLECHA DERECHA (SIGUIENTE) === */}
             {nextProject && (
-                // Usamos absolute dentro del contenedor flex para que se quede pegado al borde derecho del área gris, antes de la sidebar
-                <button 
-                    onClick={() => navigate(`/project/${nextProject.id}`)}
-                    className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"
-                    title={`Ir a: ${nextProject.name}`}
-                >
+                <button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
             )}
-
         </div>
 
         {/* SIDEBAR DERECHA */}
@@ -224,11 +285,29 @@ const ProjectDetail = ({ projects = [] }: any) => {
               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
-                    {newCoords && <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>}
+                    {/* INDICADOR DE ESTADO */}
+                    {isDrawingMode ? (
+                        <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-pulse">✏️ Dibujando...</span>
+                    ) : newCoords ? (
+                        <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
+                    ) : null}
                   </div>
+                  
+                  {/* TEXTAREA */}
                   <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
+                  
+                  {/* BOTONERA HERRAMIENTAS */}
                   <div className="flex flex-col gap-2">
                      <div className="flex gap-2">
+                         {/* BOTÓN MODO LÁPIZ */}
+                         <button 
+                            onClick={() => { setIsDrawingMode(!isDrawingMode); setNewCoords(null); }}
+                            className={`p-3 rounded-lg border transition-all ${isDrawingMode ? 'bg-rose-600 text-white border-rose-600 shadow-inner' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                            title="Dibujar en imagen"
+                         >
+                            ✏️
+                         </button>
+
                          <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                          <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}>
                              <span>📎</span>
@@ -239,8 +318,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                          </button>
                      </div>
                      {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
+                     {tempDrawings.length > 0 && <button onClick={() => setTempDrawings([])} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold text-right underline">Borrar dibujo actual</button>}
                   </div>
               </div>
+              
+              {/* LISTA DE NOTAS */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
                 {corrections.map((c) => (
@@ -250,7 +332,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
                       <div className="flex-1">
                         <p className={`text-sm font-bold leading-snug ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
-                          {c.x !== null && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
+                          {c.drawing_data && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-200">✏️ Dibujo</span>}
+                          {c.x !== null && !c.drawing_data && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
                         <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
