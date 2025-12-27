@@ -165,7 +165,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
-  // --- MODIFICADO: AUTO-FOCO AL PONER CHINCHETA ---
+  // AUTO-FOCO
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
     if (isDrawingMode) {
@@ -177,7 +177,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         const { x, y } = getRelativeCoords(e);
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
             setNewCoords({ x: x/100, y: y/100 });
-            // AQUÍ HACEMOS EL FOCO AUTOMÁTICO
             textareaRef.current?.focus();
         }
     }
@@ -267,7 +266,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         
         <div className="flex gap-4 items-center">
             
-            {/* --- MODIFICADO: TEXTO DEL BOTÓN PDF --- */}
             {corrections.length > 0 && (
                 <button 
                     onClick={handleDownloadPDF}
@@ -388,7 +386,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     ) : null}
                   </div>
                   
-                  {/* --- MODIFICADO: AÑADIDO REF PARA EL AUTO-FOCO --- */}
                   <textarea 
                     ref={textareaRef}
                     value={newNote} 
@@ -433,11 +430,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
+                        
+                        {/* --- ETIQUETAS ELIMINADAS AQUÍ, SOLO QUEDA ADJUNTO --- */}
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
-                          {c.drawing_data && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-200">✏️ Dibujo</span>}
-                          {c.x !== null && !c.drawing_data && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
+
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
                            <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
                         </div>
