@@ -10,13 +10,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   
-  // CAMBIO REALIZADO AQUÍ: Puesto 'list' como valor inicial
+  // Vista por defecto: 'list' (Lista)
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
   
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]);
 
-  // Estado para controlar la página actual en el modo Visor (si se usa)
+  // Estado para controlar la página actual en el modo Visor
   const [pageIndex, setPageIndex] = useState(0);
 
   const safeFolders = Array.isArray(folders) ? folders : [];
@@ -174,7 +174,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div className="flex gap-2 mt-2">{availableVersions.map(v => (<button key={v} onClick={() => setSelectedVersion(v)} className={`px-4 py-1 rounded-full text-[10px] font-black uppercase transition-all ${selectedVersion===v?'bg-rose-600 text-white shadow-md scale-105':'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>V{v}</button>))}</div>
           </div>
           <div className="flex gap-4 items-center">
-             {/* AÑADIDO: Botón para el modo VISOR (El icono del Ojo) */}
+             {/* Iconos de vista */}
              <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
                 <button onClick={() => setViewMode('visor')} className={`p-3 rounded-lg transition-all ${viewMode==='visor'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Visor">👁️</button>
                 <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
@@ -187,67 +187,69 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
+        {/* Subcarpetas */}
         {currentFolders.length > 0 && <div className="grid grid-cols-4 gap-6 mb-10">{currentFolders.map(f => (<div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all"><button onClick={(e) => deleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">✕</button><span className="text-4xl mb-2">📁</span><span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span></div>))}</div>}
 
-        {currentItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 opacity-50"><span className="text-6xl mb-4">📂</span><p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Carpeta vacía</p></div>
-        ) : viewMode === 'visor' ? (
-            renderVisor()
-        ) : viewMode === 'list' ? (
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-            <table className="w-full text-left table-fixed">
-              <thead>
-                <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
-                  <th className="px-8 py-6 w-32">Vista</th>
-                  <th className="px-4 py-6 w-5/12">Página</th>
-                  <th className="pl-12 py-6 w-3/12">Correcciones</th>
-                  <th className="px-8 py-6 text-right w-40">Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentItems.map((p: any) => {
-                  const myComments = comments.filter(c => String(c.page_id) === String(p.id));
-                  const pendingCount = myComments.filter(c => !c.resolved).length;
-                  return (
-                    <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
-                      <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
-                      <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
-                      <td className="pl-12 py-6 align-top">
-                        <div className="flex flex-col gap-2">
-                           {pendingCount > 0 ? (
-                             <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
-                           ) : myComments.length > 0 ? (
-                             <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
-                           ) : (
-                             <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
-                           )}
-                        </div>
-                      </td>
-                      <td className="px-8 py-6 text-right align-top"><button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button><button onClick={(e) => deleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase">Eliminar</button></td>
+        {/* CONTENIDO PRINCIPAL: Si no hay items, NO muestra nada (eliminado icono de carpeta vacía) */}
+        {currentItems.length > 0 ? (
+            viewMode === 'visor' ? (
+                renderVisor()
+            ) : viewMode === 'list' ? (
+              <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+                <table className="w-full text-left table-fixed">
+                  <thead>
+                    <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                      <th className="px-8 py-6 w-32">Vista</th>
+                      <th className="px-4 py-6 w-5/12">Página</th>
+                      <th className="pl-12 py-6 w-3/12">Correcciones</th>
+                      <th className="px-8 py-6 text-right w-40">Acción</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="grid grid-cols-4 gap-8">
-             {currentItems.map((p: any) => {
-                 const myComments = comments.filter(c => String(c.page_id) === String(p.id));
-                 const pendingCount = myComments.filter(c => !c.resolved).length;
-                 return (
-                  <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
-                    <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>}
-                      {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>}
-                      <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
-                    </div>
-                    <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
-                  </div>
-                )
-             })}
-          </div>
-        )}
+                  </thead>
+                  <tbody>
+                    {currentItems.map((p: any) => {
+                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                      const pendingCount = myComments.filter(c => !c.resolved).length;
+                      return (
+                        <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                          <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
+                          <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
+                          <td className="pl-12 py-6 align-top">
+                            <div className="flex flex-col gap-2">
+                               {pendingCount > 0 ? (
+                                 <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
+                               ) : myComments.length > 0 ? (
+                                 <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
+                               ) : (
+                                 <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
+                               )}
+                            </div>
+                          </td>
+                          <td className="px-8 py-6 text-right align-top"><button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button><button onClick={(e) => deleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase">Eliminar</button></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-8">
+                 {currentItems.map((p: any) => {
+                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                     const pendingCount = myComments.filter(c => !c.resolved).length;
+                     return (
+                      <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
+                        <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>}
+                          {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>}
+                          <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
+                        </div>
+                        <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
+                      </div>
+                    )
+                 })}
+              </div>
+            )
+        ) : null}
       </div>
     </div>
   );
