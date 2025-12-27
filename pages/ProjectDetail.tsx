@@ -23,13 +23,15 @@ const ProjectDetail = ({ projects = [] }: any) => {
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // 1. CARGA (SIN parseInt)
+  // 1. CARGA DE NOTAS (USANDO TEXTO/UUID)
   const loadCorrections = async () => {
     if (!projectId) return;
+    
+    // NO usamos parseInt, enviamos el ID tal cual (texto)
     const { data, error } = await supabase
       .from('comments')
       .select('*')
-      .eq('page_id', projectId) // ID DIRECTO (TEXTO)
+      .eq('page_id', projectId) 
       .order('created_at', { ascending: false });
       
     if (error) console.error("Error cargando notas:", error);
@@ -71,7 +73,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     });
   };
 
-  // 2. GUARDADO (SIN parseInt)
+  // 2. GUARDADO DE NOTA CON ADJUNTO (ARREGLADO)
   const handleAddNote = async () => {
     if (!newNote && !newCoords) return alert("Escribe algo o marca un punto.");
     setLoading(true);
@@ -79,17 +81,22 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
     try {
       if (selectedFile) {
-        const fileName = `nota-${Date.now()}-${selectedFile.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-        const { error } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
-        if (error) throw error;
+        // LIMPIEZA DE NOMBRE: Igual que en el Dashboard para evitar errores
+        const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+        const fileName = `adjunto-${Date.now()}-${sanitizedName}`;
+        
+        const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile);
+        
+        if (uploadError) throw uploadError;
+        
         const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName);
         fileUrl = data.publicUrl;
       }
 
       const { error: insertError } = await supabase.from('comments').insert([{
-        page_id: projectId, // ID DIRECTO (TEXTO)
+        page_id: projectId, // ID como texto
         content: newNote,
-        attachment_url: fileUrl,
+        attachment_url: fileUrl, // Aquí va la URL de la imagen si se subió
         resolved: false,
         x: newCoords?.x || null,
         y: newCoords?.y || null
@@ -98,12 +105,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
       if (insertError) alert("Error al guardar: " + insertError.message);
       else {
         setNewNote("");
-        setSelectedFile(null);
+        setSelectedFile(null); // Reseteamos el archivo
         setNewCoords(null);
-        loadCorrections();
+        loadCorrections(); 
       }
     } catch (err: any) {
-      alert("Error: " + err.message);
+      alert("Error subiendo archivo: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -175,10 +182,19 @@ const ProjectDetail = ({ projects = [] }: any) => {
                    {newCoords && <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>}
                  </div>
                  <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
-                 <div className="flex gap-2">
-                    <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
-                    <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200"}`}>📎</label>
-                    <button onClick={handleAddNote} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>{loading?"GUARDANDO...":"GUARDAR"}</button>
+                 <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                        <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                        <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}>
+                            <span>📎</span>
+                            {selectedFile ? "LISTO" : "ADJUNTAR"}
+                        </label>
+                        <button onClick={handleAddNote} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>
+                            {loading ? "SUBIENDO..." : "GUARDAR"}
+                        </button>
+                    </div>
+                    {/* AQUI MOSTRAMOS EL NOMBRE DEL ARCHIVO SI ESTÁ SELECCIONADO */}
+                    {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
                  </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
@@ -189,6 +205,10 @@ const ProjectDetail = ({ projects = [] }: any) => {
                       <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved?"bg-emerald-500 border-emerald-500 text-white":"bg-white border-rose-400 hover:scale-110"}`}>{c.resolved && "✓"}</button>
                       <div className="flex-1">
                         <p className={`text-sm font-bold leading-snug ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
+                        <div className="flex flex-wrap gap-2 mt-2 items-center">
+                          {c.x !== null && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
+                          {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
+                        </div>
                         <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
                            <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
                            <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
