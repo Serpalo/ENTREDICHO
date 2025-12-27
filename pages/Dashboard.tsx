@@ -7,13 +7,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // --- ESTADOS ---
+  // ESTADOS
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]); 
 
-  // --- FILTROS ---
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
@@ -29,8 +28,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     return Array.from(versions).sort((a, b) => a - b);
   }, [allItemsInFolder]);
 
-  // --- EFECTOS ---
-  // 1. Auto-selección de última versión
+  // Auto-selección última versión
   useEffect(() => {
     if (availableVersions.length > 0) {
       const maxVersion = availableVersions[availableVersions.length - 1];
@@ -40,34 +38,37 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // 2. Carga de comentarios
+  // --- CORRECCIÓN AQUÍ: CARGAR COMENTARIOS USANDO NÚMEROS ---
   const loadComments = async () => {
-    const pageIds = allItemsInFolder.map((p: any) => p.id);
+    // Convertimos los IDs de los proyectos a NÚMEROS para que coincidan con la base de datos (int8)
+    const pageIds = allItemsInFolder.map((p: any) => parseInt(p.id));
+    
     if (pageIds.length === 0) return;
 
     const { data, error } = await supabase
       .from('comments')
       .select('*')
-      .in('page_id', pageIds)
+      .in('page_id', pageIds) // Ahora enviamos números [101, 102...]
       .order('created_at', { ascending: true });
       
     if (error) console.error("Error cargando notas:", error);
     if (data) setComments(data);
   };
 
+  // Recargamos datos al entrar o cambiar versión
   useEffect(() => {
     loadComments();
     const timer = setTimeout(() => loadComments(), 1000);
     return () => clearTimeout(timer);
   }, [projects.length, selectedVersion]);
 
-  // --- ACCIONES ---
   const toggleCommentResolved = async (commentId: string, currentStatus: boolean) => {
     setComments(prev => prev.map(c => c.id === commentId ? { ...c, resolved: !currentStatus } : c));
     await supabase.from('comments').update({ resolved: !currentStatus }).eq('id', commentId);
     loadComments();
   };
 
+  // --- FUNCIONES DE GESTIÓN ---
   const handleDeleteProject = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     if (window.confirm("¿Eliminar este folleto?")) {
@@ -79,7 +80,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
-  // --- SUBIDA SEGURA ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -94,11 +94,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
 
       const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(safeStorageName, file);
-      
-      if (uploadError) { 
-        alert("Error al subir (nombre inválido): " + uploadError.message); 
-        continue; 
-      }
+      if (uploadError) { alert("Error al subir: " + uploadError.message); continue; }
       
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
@@ -107,31 +103,37 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         parent_id: folderId ? parseInt(folderId) : null, 
         image_url: publicUrlData.publicUrl, 
         version: nextVersion, 
-        storage_name: safeStorageName
+        storage_name: safeStorageName 
       }]);
     }
-    
     if (onRefresh) await onRefresh();
     setSelectedVersion(nextVersion);
     alert(`Versión ${nextVersion} subida con éxito`);
   };
-
-  // --- RENDERIZADO DE CONTENIDO ---
   
+  const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
+    return safeFolders.filter(f => f.parent_id === parentId).map(f => {
+      const hasChildren = safeFolders.some(child => child.parent_id === f.id);
+      const isOpen = openFolders[f.id];
+      return (
+        <div key={f.id} className="flex flex-col">
+          <div onClick={() => navigate(`/folder/${f.id}`)} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`} style={{ paddingLeft: `${level * 12 + 8}px` }}>{hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px]">{isOpen ? '▼' : '▶'}</span>}<span className="text-sm">📁 {f.name}</span></div>{hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
+        </div>
+      );
+    });
+  };
+
+  // --- RENDERIZADO POR BLOQUES ---
   let content;
 
   if (currentItems.length === 0) {
-    // 1. CASO VACÍO
     content = (
       <div className="flex flex-col items-center justify-center py-20 opacity-50">
         <span className="text-6xl mb-4">📂</span>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">
-          {allItemsInFolder.length > 0 ? `No hay archivos en la Versión ${selectedVersion}` : "Carpeta vacía"}
-        </p>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">{allItemsInFolder.length > 0 ? `No hay archivos en la Versión ${selectedVersion}` : "Carpeta vacía"}</p>
       </div>
     );
   } else if (viewMode === 'list') {
-    // 2. CASO LISTA (TABLA)
     content = (
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <table className="w-full text-left table-fixed">
@@ -145,7 +147,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </thead>
           <tbody>
             {currentItems.map((p: any) => {
-              // Convertimos a String para asegurar coincidencia
+              // FILTRO SEGURO: Convertimos a string ambos lados para comparar sin miedo
               const myComments = comments.filter(c => String(c.page_id) === String(p.id));
               const pendingCount = myComments.filter(c => !c.resolved).length;
               
@@ -159,37 +161,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                   <td className="px-4 py-6 align-top">
                     <p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter break-words pr-4">{p.name}</p>
                   </td>
-                  
-                  {/* AQUÍ ESTÁ EL CAMBIO IMPORTANTE: CONTADOR DE CORRECCIONES */}
                   <td className="px-4 py-6 align-top">
                     <div className="flex flex-col gap-2">
                       {pendingCount > 0 ? (
-                        // CASO: Hay pendientes (ROJO)
-                        <span className="bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-[10px] font-black w-fit border border-rose-200 shadow-sm flex items-center gap-2 animate-pulse">
-                          🚨 {pendingCount} PENDIENTE{pendingCount !== 1 ? 'S' : ''}
-                        </span>
+                        <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-2 py-1 rounded border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                       ) : myComments.length > 0 ? (
-                         // CASO: Todo hecho (VERDE)
-                        <span className="bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-lg text-[10px] font-black w-fit border border-emerald-200 shadow-sm flex items-center gap-2">
-                          ✓ TODO HECHO
-                        </span>
+                        <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-2 py-1 rounded border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
                       ) : (
-                        // CASO: Sin notas (GRIS)
-                        <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
+                        <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
                       )}
-
-                      {/* Lista detallada de notas debajo */}
+                      
                       {myComments.map(c => (
-                        <div key={c.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-rose-200 shadow-sm'}`}>
-                          <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded-md border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
+                        <div key={c.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                          <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
                             {c.resolved && <span className="text-white text-[10px] font-bold">✓</span>}
                           </div>
-                          <span className={`text-xs font-bold leading-tight ${c.resolved ? 'text-emerald-800 line-through opacity-60' : 'text-slate-700'}`}>{c.content}</span>
+                          <span className={`text-xs font-bold leading-tight ${c.resolved ? 'text-emerald-800 line-through opacity-60' : 'text-rose-800'}`}>{c.content}</span>
                         </div>
                       ))}
                     </div>
                   </td>
-
                   <td className="px-8 py-6 text-right align-top">
                     <div className="flex flex-col gap-2 items-end">
                       <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 transition-colors">Revisar →</button>
@@ -204,7 +195,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       </div>
     );
   } else {
-    // 3. CASO CUADRÍCULA (GRID)
     content = (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
         {currentItems.map((p: any) => {
@@ -214,18 +204,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
               <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer">
                 {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>}
-                
-                {/* Badge en modo Grid */}
-                {pendingCount > 0 ? (
-                   <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">
-                      {pendingCount} CORRECCIONES
-                   </div>
-                ) : myComments.length > 0 && (
-                   <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">
-                      ✓ TODO HECHO
-                   </div>
-                )}
-                
+                {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>}
+                {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ COMPLETADO</div>}
                 <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm font-bold">✕</button>
               </div>
               <div className="p-6 flex flex-col gap-3">
@@ -238,18 +218,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       </div>
     );
   }
-
-  const renderFolderTree = (parentId: number | null = null, level: number = 0) => {
-    return safeFolders.filter(f => f.parent_id === parentId).map(f => {
-      const hasChildren = safeFolders.some(child => child.parent_id === f.id);
-      const isOpen = openFolders[f.id];
-      return (
-        <div key={f.id} className="flex flex-col">
-          <div onClick={() => navigate(`/folder/${f.id}`)} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer ${String(folderId) === String(f.id) ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50'}`} style={{ paddingLeft: `${level * 12 + 8}px` }}>{hasChildren && <span onClick={(e) => toggleFolder(f.id, e)} className="text-[10px]">{isOpen ? '▼' : '▶'}</span>}<span className="text-sm">📁 {f.name}</span></div>{hasChildren && isOpen && renderFolderTree(f.id, level + 1)}
-        </div>
-      );
-    });
-  };
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
@@ -290,7 +258,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
-        {/* CARPETAS INTERIORES */}
         {currentFolders.length > 0 && (
           <div className="grid grid-cols-4 gap-6 mb-10">
             {currentFolders.map(f => (
@@ -303,7 +270,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         )}
 
-        {/* AQUÍ VA EL CONTENIDO SELECCIONADO */}
+        {/* AQUÍ SE PINTA EL CONTENIDO */}
         {content}
 
       </div>
