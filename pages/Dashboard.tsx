@@ -69,7 +69,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Alcampo_logo.svg/2560px-Alcampo_logo.svg.png" alt="Logo" className="h-10 w-fit object-contain" />
+        
+        {/* --- CAMBIO AQUÍ: RUTA DIRECTA A PUBLIC --- */}
+        <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
+        
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
           <div className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Estructura</div>
@@ -101,13 +104,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
               <thead>
                 <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
                   <th className="px-8 py-6 w-32">Vista</th>
-                  
-                  {/* HE AUMENTADO EL ANCHO DE LA COLUMNA DE PÁGINA (w-5/12) */}
                   <th className="px-4 py-6 w-5/12">Página</th>
-                  
-                  {/* HE AÑADIDO 'pl-12' (PADDING LEFT) PARA EMPUJARLO A LA DERECHA */}
                   <th className="pl-12 py-6 w-3/12">Correcciones</th>
-                  
                   <th className="px-8 py-6 text-right w-40">Acción</th>
                 </tr>
               </thead>
@@ -119,8 +117,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
                       <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
                       <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
-                      
-                      {/* APLICAMOS TAMBIÉN EL DESPLAZAMIENTO 'pl-12' AQUÍ */}
                       <td className="pl-12 py-6 align-top">
                         <div className="flex flex-col gap-2">
                            {pendingCount > 0 ? (
@@ -132,7 +128,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                            )}
                         </div>
                       </td>
-
                       <td className="px-8 py-6 text-right align-top"><button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button><button onClick={(e) => deleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase">Eliminar</button></td>
                     </tr>
                   );
