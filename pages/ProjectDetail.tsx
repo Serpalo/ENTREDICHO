@@ -93,7 +93,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
       .from('comments')
       .select('*')
       .eq('page_id', projectId) 
-      .order('created_at', { ascending: false });
+      // CAMBIO REALIZADO AQUÍ: ascending: true (Orden cronológico: de antigua a nueva)
+      .order('created_at', { ascending: true });
     if (error) console.error("Error cargando notas:", error);
     setCorrections(data || []);
   };
@@ -220,6 +221,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
         
         <div className="flex gap-4 items-center">
+            
+            {/* --- SELECTOR DE COMPARACIÓN INTELIGENTE --- */}
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                     <button 
@@ -244,7 +247,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO (POSICIÓN {currentIndex + 1})</span>
             )}
             
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -262,7 +265,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
             {/* === FLECHAS DE NAVEGACIÓN (Solo si NO estamos comparando) === */}
-            
             {!isComparing && prevProject && (
                 <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
