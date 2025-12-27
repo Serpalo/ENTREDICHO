@@ -9,12 +9,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
-  // AÑADIDO: 'visor' como modo por defecto para ver las flechas nada más entrar
-  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('visor');
+  
+  // CAMBIO REALIZADO AQUÍ: Puesto 'list' como valor inicial
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
+  
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]);
 
-  // AÑADIDO: Estado para controlar la página actual en el modo Visor
+  // Estado para controlar la página actual en el modo Visor (si se usa)
   const [pageIndex, setPageIndex] = useState(0);
 
   const safeFolders = Array.isArray(folders) ? folders : [];
@@ -24,7 +26,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
 
-  // AÑADIDO: Resetear el índice de página si cambiamos de carpeta o versión
+  // Resetear el índice de página si cambiamos de carpeta o versión
   useEffect(() => { setPageIndex(0); }, [folderId, selectedVersion]);
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
@@ -91,11 +93,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     );
   });
 
-  // Helper para renderizar el contenido del Visor (lo nuevo)
+  // Helper para renderizar el contenido del Visor
   const renderVisor = () => {
     if (currentItems.length === 0) return null;
     const p = currentItems[pageIndex];
-    if (!p) return null; // Por seguridad
+    if (!p) return null;
 
     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
     const pendingCount = myComments.filter(c => !c.resolved).length;
@@ -190,7 +192,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         {currentItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 opacity-50"><span className="text-6xl mb-4">📂</span><p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Carpeta vacía</p></div>
         ) : viewMode === 'visor' ? (
-            // --- RENDERIZAMOS EL NUEVO MODO VISOR ---
             renderVisor()
         ) : viewMode === 'list' ? (
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
