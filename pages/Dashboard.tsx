@@ -10,7 +10,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   
-  // Vista por defecto: 'list' (Lista)
+  // Vista por defecto: 'list'
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
   
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
@@ -30,6 +30,20 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   useEffect(() => { setPageIndex(0); }, [folderId, selectedVersion]);
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
+
+  // --- LÓGICA DE MIGAS DE PAN (BREADCRUMBS) ---
+  // Esto calcula la ruta completa: T2 / HG / UNICO
+  const breadcrumbs = useMemo(() => {
+    if (!folderId) return [];
+    const crumbs = [];
+    let current = safeFolders.find(f => String(f.id) === String(folderId));
+    while (current) {
+        crumbs.unshift(current); // Añadimos al principio
+        // Buscamos al padre
+        current = safeFolders.find(f => String(f.id) === String(current.parent_id));
+    }
+    return crumbs;
+  }, [folderId, safeFolders]);
 
   // --- NAVEGACIÓN VISOR ---
   const prevPage = () => { if (pageIndex > 0) setPageIndex(p => p - 1); };
@@ -104,8 +118,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group">
-
-        {/* FLECHA IZQUIERDA */}
         <button
             onClick={(e) => { e.stopPropagation(); prevPage(); }}
             disabled={pageIndex === 0}
@@ -114,11 +126,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
 
-        {/* IMAGEN CENTRAL */}
         <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
              <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
-
-             {/* Info superpuesta en la imagen */}
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
                 {pendingCount > 0 ? (
                     <div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>
@@ -128,7 +137,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
              </div>
         </div>
 
-        {/* INFO INFERIOR Y CONTROLES DE LA PÁGINA ACTUAL */}
         <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-sm p-4 border-t border-slate-100 flex justify-between items-center">
              <div className="flex flex-col">
                 <span className="text-[10px] font-black text-slate-400 uppercase">Página {pageIndex + 1} de {currentItems.length}</span>
@@ -140,7 +148,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
              </div>
         </div>
 
-        {/* FLECHA DERECHA */}
         <button
             onClick={(e) => { e.stopPropagation(); nextPage(); }}
             disabled={pageIndex === currentItems.length - 1}
@@ -148,7 +155,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         >
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </button>
-
       </div>
     );
   };
@@ -157,9 +163,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
-
         <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
-
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
           <div className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Estructura</div>
@@ -170,11 +174,29 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       <div className="flex-1 p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
           <div className="flex flex-col gap-2">
-            <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter">{folderId ? safeFolders.find(f => String(f.id) === String(folderId))?.name.toUpperCase() : "MIS PROYECTOS"}</h1>
+            
+            {/* --- AQUÍ ESTÁ EL CAMBIO DE LA RUTA --- */}
+            <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter flex items-center flex-wrap gap-2">
+                {breadcrumbs.length > 0 ? (
+                    breadcrumbs.map((crumb, idx) => (
+                        <React.Fragment key={crumb.id}>
+                            <span 
+                                onClick={() => navigate(`/folder/${crumb.id}`)}
+                                className={`cursor-pointer hover:text-rose-600 transition-colors ${idx === breadcrumbs.length - 1 ? 'text-slate-800' : 'text-slate-400'}`}
+                            >
+                                {crumb.name}
+                            </span>
+                            {idx < breadcrumbs.length - 1 && <span className="text-slate-300">/</span>}
+                        </React.Fragment>
+                    ))
+                ) : (
+                    "MIS PROYECTOS"
+                )}
+            </h1>
+
             <div className="flex gap-2 mt-2">{availableVersions.map(v => (<button key={v} onClick={() => setSelectedVersion(v)} className={`px-4 py-1 rounded-full text-[10px] font-black uppercase transition-all ${selectedVersion===v?'bg-rose-600 text-white shadow-md scale-105':'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>V{v}</button>))}</div>
           </div>
           <div className="flex gap-4 items-center">
-             {/* Iconos de vista */}
              <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
                 <button onClick={() => setViewMode('visor')} className={`p-3 rounded-lg transition-all ${viewMode==='visor'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Visor">👁️</button>
                 <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
@@ -187,10 +209,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
-        {/* Subcarpetas */}
         {currentFolders.length > 0 && <div className="grid grid-cols-4 gap-6 mb-10">{currentFolders.map(f => (<div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all"><button onClick={(e) => deleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">✕</button><span className="text-4xl mb-2">📁</span><span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span></div>))}</div>}
 
-        {/* CONTENIDO PRINCIPAL: Si no hay items, NO muestra nada (eliminado icono de carpeta vacía) */}
         {currentItems.length > 0 ? (
             viewMode === 'visor' ? (
                 renderVisor()
