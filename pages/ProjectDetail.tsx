@@ -270,7 +270,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     }
   };
 
-  // Helper para estilos estáticos (dibujo actual)
+  // Helper para estilos estáticos
   const getStrokeStyle = (tool: DrawingTool) => {
       const isHighlighter = tool === 'highlighter';
       return {
@@ -366,12 +366,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
                               const isHovered = hoveredId === c.id;
                               const isHighlighter = c.drawing_tool === 'highlighter';
                               
-                              // 1. Color: Amarillo si es subrayador, Azul si es general, Rojo por defecto
                               let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; 
                               if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
                               
-                              // 2. Grosor y Opacidad Dinámicos
-                              // Si es hover -> mucho más grueso y visible
                               const strokeWidth = isHighlighter 
                                   ? (isHovered ? "4" : "2") 
                                   : (isHovered ? "1.5" : "0.5");
@@ -396,7 +393,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                           })
                       ))}
                       
-                      {/* Dibujos Temporales y Actuales */}
                       {tempDrawings.map((item, i) => {
                           const style = getStrokeStyle(item.tool);
                           return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -407,10 +403,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   </svg>
 
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
-                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-rose-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-rose-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
+                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
                   
-                  {newCoords && <div className="absolute w-8 h-8 bg-rose-500/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
+                  {/* --- CAMBIO DE COLOR AQUI: bg-purple-600 --- */}
+                  {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
                 </div>
             )}
 
@@ -432,7 +429,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                             {activeTool === 'highlighter' ? '🖍️ Subrayando...' : '✏️ Dibujando...'}
                         </span>
                     ) : newCoords ? (
-                        <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
+                        <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
                     ) : null}
                   </div>
                   
@@ -501,25 +498,25 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     onMouseEnter={() => setHoveredId(c.id)} 
                     onMouseLeave={() => setHoveredId(null)} 
                     className={`p-4 rounded-2xl border-2 transition-all 
-                        ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} 
+                        ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200')} 
                         ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}
                   >
                     <div className="flex gap-3 items-start">
                       <button 
                         onClick={() => toggleCheck(c.id, c.resolved)} 
                         className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                            ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
+                            ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-purple-400 hover:scale-110")}`}
                       >
                           {c.resolved && "✓"}
                       </button>
                       
                       <div className="flex-1">
                         <div className="flex justify-between">
-                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-rose-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
+                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-purple-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         
-                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900")}`}>
+                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-purple-900")}`}>
                             {c.content}
                         </p>
                         
@@ -528,7 +525,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                         </div>
 
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>
+                           <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-purple-300 hover:text-purple-600'}`}>Borrar</button>
                         </div>
                       </div>
                     </div>
