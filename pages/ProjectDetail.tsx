@@ -29,11 +29,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareProject, setCompareProject] = useState<any>(null);
 
-  // --- NUEVOS ESTADOS PARA DIBUJO ---
-  const [isDrawingMode, setIsDrawingMode] = useState(false); // ¿Estamos en modo lápiz?
-  const [isDrawing, setIsDrawing] = useState(false); // ¿Está el ratón pulsado dibujando?
-  const [currentPath, setCurrentPath] = useState<string>(""); // Trazo actual
-  const [tempDrawings, setTempDrawings] = useState<string[]>([]); // Dibujos de la nota actual antes de guardar
+  // ESTADOS PARA DIBUJO
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentPath, setCurrentPath] = useState<string>("");
+  const [tempDrawings, setTempDrawings] = useState<string[]>([]);
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -77,14 +77,13 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setSliderPosition((x / rect.width) * 100);
   };
 
-  // --- LÓGICA DE DIBUJO (MOUSE EVENTS) ---
+  // --- LÓGICA DE DIBUJO ---
   const getRelativeCoords = (e: any) => {
     if (!imageContainerRef.current) return { x: 0, y: 0 };
     const rect = imageContainerRef.current.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    // Convertimos a coordenadas relativas 0-100 para que funcione con Zoom
     const x = ((clientX - rect.left) / rect.width) * 100;
     const y = ((clientY - rect.top) / rect.height) * 100;
     return { x, y };
@@ -94,15 +93,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
     if (isComparing) return;
 
     if (isDrawingMode) {
-        // MODO LÁPIZ: Empezar trazo
         setIsDrawing(true);
         const { x, y } = getRelativeCoords(e);
         setCurrentPath(`M ${x} ${y}`);
-        e.preventDefault(); // Evitar scroll en táctil
+        e.preventDefault();
     } else {
-        // MODO PUNTERO: Poner Pin
         const { x, y } = getRelativeCoords(e);
-        // Solo marcamos si estamos dentro (0-100)
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
             setNewCoords({ x: x/100, y: y/100 });
         }
@@ -125,7 +121,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   // 2. GUARDADO DE NOTA
   const handleAddNote = async () => {
-    // Permitimos guardar si hay texto O punto O dibujo
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
     let fileUrl = "";
@@ -140,7 +135,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         fileUrl = data.publicUrl;
       }
 
-      // Preparamos los datos del dibujo (unimos todos los trazos con |)
       const drawingDataString = tempDrawings.length > 0 ? tempDrawings.join('|') : null;
 
       const { error: insertError } = await supabase.from('comments').insert([{
@@ -150,18 +144,17 @@ const ProjectDetail = ({ projects = [] }: any) => {
         resolved: false,
         x: newCoords?.x || null,
         y: newCoords?.y || null,
-        drawing_data: drawingDataString // GUARDAMOS EL DIBUJO AQUÍ
+        drawing_data: drawingDataString
       }]);
 
       if (insertError) alert("Error al guardar: " + insertError.message);
       else {
-        // Reset total
         setNewNote("");
         setSelectedFile(null);
         setNewCoords(null);
         setTempDrawings([]); 
         setCurrentPath("");
-        setIsDrawingMode(false); // Volver a modo normal
+        setIsDrawingMode(false);
         loadCorrections(); 
       }
     } catch (err: any) {
@@ -211,10 +204,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
       <div className="flex-1 flex overflow-hidden">
         
-        {/* ZONA CENTRAL (IMAGEN) */}
+        {/* ZONA CENTRAL */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {/* FLECHAS DE NAVEGACIÓN */}
             {prevProject && (
                 <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -222,7 +214,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
             )}
 
             {isComparing && compareProject ? (
-                /* MODO COMPARADOR (Sin cambios en lógica de dibujo, solo visualiza) */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
@@ -231,7 +222,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
                 </div>
             ) : (
-                /* MODO EDICIÓN (DIBUJO Y PINES) */
                 <div 
                     ref={imageContainerRef} 
                     onPointerDown={handlePointerDown} 
@@ -243,31 +233,24 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 >
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
-                  {/* CAPA DE DIBUJOS (SVG) */}
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      {/* Dibujos GUARDADOS */}
                       {corrections.map(c => !c.resolved && c.drawing_data && (
                           c.drawing_data.split('|').map((path: string, i: number) => (
                               <path key={`${c.id}-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
                           ))
                       ))}
-                      
-                      {/* Dibujos TEMPORALES (Nota actual) */}
                       {tempDrawings.map((path, i) => (
                           <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       ))}
-                      {/* Trazo ACTUAL (Mientras dibujas) */}
                       {currentPath && (
                           <path d={currentPath} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       )}
                   </svg>
 
-                  {/* PINES GUARDADOS */}
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
                     <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id?"bg-rose-600 scale-150 z-30":"bg-rose-500 hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
                   
-                  {/* PIN NUEVO (TEMPORAL) */}
                   {newCoords && <div className="absolute w-8 h-8 bg-rose-500/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
                 </div>
             )}
@@ -285,7 +268,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
-                    {/* INDICADOR DE ESTADO */}
                     {isDrawingMode ? (
                         <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded animate-pulse">✏️ Dibujando...</span>
                     ) : newCoords ? (
@@ -293,13 +275,10 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     ) : null}
                   </div>
                   
-                  {/* TEXTAREA */}
                   <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
                   
-                  {/* BOTONERA HERRAMIENTAS */}
                   <div className="flex flex-col gap-2">
                      <div className="flex gap-2">
-                         {/* BOTÓN MODO LÁPIZ */}
                          <button 
                             onClick={() => { setIsDrawingMode(!isDrawingMode); setNewCoords(null); }}
                             className={`p-3 rounded-lg border transition-all ${isDrawingMode ? 'bg-rose-600 text-white border-rose-600 shadow-inner' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
@@ -322,7 +301,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   </div>
               </div>
               
-              {/* LISTA DE NOTAS */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
                 {corrections.map((c) => (
@@ -337,7 +315,10 @@ const ProjectDetail = ({ projects = [] }: any) => {
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
                         <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
-                           <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                           {/* --- AQUÍ ESTÁ EL CAMBIO DE FECHA Y HORA --- */}
+                           <span className="text-[9px] text-slate-400 font-bold">
+                               {new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                           </span>
                            <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
                         </div>
                       </div>
