@@ -20,56 +20,49 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   
-  // --- NUEVO: ESTADOS PARA EL COMPARADOR ---
+  // ESTADOS PARA EL COMPARADOR
   const [isComparing, setIsComparing] = useState(false);
-  const [sliderPosition, setSliderPosition] = useState(50); // 50% por defecto
-  const [compareProject, setCompareProject] = useState<any>(null); // El proyecto contra el que comparamos
+  const [sliderPosition, setSliderPosition] = useState(50); 
+  const [compareProject, setCompareProject] = useState<any>(null);
 
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // --- LÓGICA DEL COMPARADOR ---
-  // Intentamos encontrar la versión anterior automáticamente
   useEffect(() => {
     if (project && projects.length > 0) {
-      // 1. Buscamos todos los proyectos de la misma carpeta
       const sameFolderProjects = projects
         .filter((p: any) => p.parent_id === project.parent_id)
-        .sort((a: any, b: any) => a.name.localeCompare(b.name)); // Ordenados por nombre
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-      // 2. Agrupamos por versión
       const currentVersionProjects = sameFolderProjects.filter((p: any) => p.version === project.version);
       const prevVersionProjects = sameFolderProjects.filter((p: any) => p.version === (project.version - 1));
 
-      // 3. Buscamos el índice (posición) de este proyecto en su versión actual
       const myIndex = currentVersionProjects.findIndex((p: any) => p.id === project.id);
 
-      // 4. Si existe esa misma posición en la versión anterior, ese es nuestro match!
       if (prevVersionProjects[myIndex]) {
         setCompareProject(prevVersionProjects[myIndex]);
       }
     }
   }, [project, projects]);
 
-  // Manejo del slider (arrastrar)
   const handleSliderMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
     let clientX;
-    
     if ('touches' in e) {
       clientX = e.touches[0].clientX;
     } else {
       clientX = (e as React.MouseEvent).clientX;
     }
-
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     const percentage = (x / rect.width) * 100;
     setSliderPosition(percentage);
   };
 
-  // --- CARGA DE CORRECCIONES ---
+  // --- CARGA DE CORRECCIONES (FIX: ID numérico) ---
   const loadCorrections = async () => {
     if (!projectId) return;
+    // Forzamos conversión a número para asegurar coincidencia con la BD
     const idAsNumber = parseInt(projectId);
 
     const { data, error } = await supabase
@@ -85,7 +78,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   useEffect(() => { loadCorrections(); }, [projectId]);
 
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isComparing) return; // No ponemos notas en modo comparación
+    if (isComparing) return;
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
@@ -93,6 +86,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setNewCoords({ x, y });
   };
 
+  // --- GUARDAR NOTA (FIX: ID numérico) ---
   const handleAddNote = async () => {
     if (!newNote && !newCoords) {
       alert("Escribe una nota o marca un punto en la imagen.");
@@ -110,8 +104,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
         fileUrl = data.publicUrl;
       }
 
+      // AQUÍ ESTÁ LA CLAVE: parseInt(projectId)
       const { error: insertError } = await supabase.from('comments').insert([{
-        page_id: parseInt(projectId || "0"),
+        page_id: parseInt(projectId || "0"), 
         content: newNote || "Corrección visual",
         attachment_url: fileUrl,
         resolved: false,
@@ -136,6 +131,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   };
 
   const toggleCheck = async (id: string, currentResolved: boolean) => {
+    // Actualización optimista
     setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
     await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id);
     loadCorrections();
@@ -164,7 +160,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
           </h2>
         </div>
         
-        {/* BOTÓN MÁGICO DE COMPARAR */}
         <div className="flex gap-4 items-center">
             {compareProject ? (
               <button 
@@ -198,7 +193,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* VISOR CENTRAL */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {/* MODO COMPARACIÓN (SLIDER) */}
+            {/* MODO COMPARACIÓN */}
             {isComparing && compareProject ? (
                 <div 
                     ref={imageContainerRef}
@@ -209,28 +204,22 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     style={{ 
                         width: zoomLevel === 1 ? 'auto' : `${zoomLevel * 100}%`,
                         height: zoomLevel === 1 ? '100%' : 'auto',
-                        aspectRatio: '3/4', // Forzamos proporción para que encaje
+                        aspectRatio: '3/4',
                     }}
                 >
-                    {/* IMAGEN NUEVA (FONDO) */}
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     <div className="absolute top-4 right-4 bg-rose-600 text-white px-2 py-1 text-[10px] font-black rounded z-10">V{project.version} (NUEVA)</div>
 
-                    {/* IMAGEN VIEJA (RECORTADA) */}
                     <div 
                         className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-[2px_0_10px_rgba(0,0,0,0.3)]"
                         style={{ width: `${sliderPosition}%` }}
                     >
                         <img src={compareProject.image_url} className="absolute top-0 left-0 w-[100vw] max-w-none h-full object-contain pointer-events-none" 
-                             style={{ 
-                                 // Truco maestro para que la imagen vieja se quede quieta mientras recortamos el div
-                                 width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' 
-                             }} 
+                             style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }} 
                         />
                         <div className="absolute top-4 left-4 bg-slate-800 text-white px-2 py-1 text-[10px] font-black rounded z-20">V{compareProject.version} (ANTERIOR)</div>
                     </div>
 
-                    {/* MANIJA DEL SLIDER */}
                     <div 
                         className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center shadow-lg"
                         style={{ left: `${sliderPosition}%` }}
@@ -241,7 +230,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     </div>
                 </div>
             ) : (
-                // MODO NORMAL (CON CHINCHETAS Y NOTAS)
+                // MODO NORMAL (Poner chinchetas)
                 <div 
                 ref={imageContainerRef}
                 onClick={handleImageClick}
@@ -258,6 +247,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     <div className="w-[500px] h-[700px] flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>
                 )}
 
+                {/* CHINCHETAS EN EL MAPA (Solo las pendientes se muestran en el mapa para no ensuciar, o todas si prefieres) */}
                 {corrections.map(c => c.x !== null && c.y !== null && !c.resolved && (
                     <div 
                     key={c.id}
@@ -282,7 +272,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
             )}
         </div>
 
-        {/* BARRA LATERAL (Solo visible en modo normal) */}
+        {/* BARRA LATERAL (Donde están las notas) */}
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
             <div className="p-6 border-b border-slate-100 bg-slate-50/50">
@@ -319,10 +309,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     key={c.id} 
                     onMouseEnter={() => setHoveredId(c.id)}
                     onMouseLeave={() => setHoveredId(null)}
+                    // ESTILOS SEMÁFORO: Rojo si pendiente, Verde si resuelto
                     className={`p-4 rounded-2xl border-2 transition-all ${
                     c.resolved 
-                        ? 'bg-emerald-50 border-emerald-100 opacity-60' 
-                        : 'bg-rose-50 border-rose-200'
+                        ? 'bg-emerald-50 border-emerald-200 opacity-80' // VERDE
+                        : 'bg-rose-50 border-rose-200'                  // ROJO
                     } ${hoveredId === c.id ? 'scale-[1.02] shadow-md' : ''}`}
                 >
                     <div className="flex gap-3 items-start">
@@ -330,7 +321,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                         {c.resolved && "✓"}
                     </button>
                     <div className="flex-1">
-                        <p className={`text-sm font-bold text-slate-700 leading-snug ${c.resolved && "line-through text-slate-400"}`}>{c.content}</p>
+                        <p className={`text-sm font-bold leading-snug ${c.resolved ? "text-emerald-800 line-through opacity-70" : "text-rose-900"}`}>{c.content}</p>
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                         {c.x !== null && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
                         {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-white/50 text-slate-500 px-1.5 py-0.5 rounded uppercase border border-slate-200 hover:bg-white">📎 Adjunto</a>}
