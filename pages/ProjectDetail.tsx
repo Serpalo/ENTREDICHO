@@ -13,7 +13,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // REFERENCIA PARA EL AUTO-FOCO (El truco para escribir directo)
+  // REFERENCIA PARA EL AUTO-FOCO
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // 1. IDENTIFICAR PROYECTO ACTUAL
@@ -116,11 +116,24 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
     corrections.forEach((c, index) => {
         if (yPosition > 270) { doc.addPage(); yPosition = 20; }
-        const status = c.resolved ? "[HECHO]" : "[PENDIENTE]";
+        
+        let statusText = "[PENDIENTE]";
+        // Colores: Verde (Resuelto), Azul (General), Rojo (Pendiente normal)
+        if (c.resolved) {
+            doc.setTextColor(22, 163, 74); // Verde
+            statusText = "[HECHO]";
+        } else if (c.is_general) {
+            doc.setTextColor(37, 99, 235); // Azul
+            statusText = "[GENERAL]";
+        } else {
+            doc.setTextColor(225, 29, 72); // Rojo
+            statusText = "[PENDIENTE]";
+        }
+
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(c.resolved ? 16 : 225, c.resolved ? 185 : 29, c.resolved ? 129 : 72);
-        doc.text(`${index + 1}. ${status}`, 10, yPosition);
+        doc.text(`${index + 1}. ${statusText}`, 10, yPosition);
+        
         const date = new Date(c.created_at).toLocaleString();
         doc.setFont("helvetica", "normal");
         doc.setTextColor(150);
@@ -165,7 +178,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
-  // --- AUTO-FOCO MEJORADO (AQUÍ ESTÁ LA CLAVE) ---
+  // AUTO-FOCO
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
     if (isDrawingMode) {
@@ -177,12 +190,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         const { x, y } = getRelativeCoords(e);
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
             setNewCoords({ x: x/100, y: y/100 });
-            // Usamos setTimeout para asegurar que el foco se aplica DESPUÉS de que React pinte el punto
-            setTimeout(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.focus();
-                }
-            }, 50);
+            setTimeout(() => textareaRef.current?.focus(), 50);
         }
     }
   };
@@ -201,7 +209,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setIsDrawing(false);
   };
 
-  const handleAddNote = async () => {
+  // --- FUNCIÓN GUARDAR MODIFICADA PARA ACEPTAR TIPO GENERAL ---
+  const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
     let fileUrl = "";
@@ -223,6 +232,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         content: newNote,
         attachment_url: fileUrl,
         resolved: false,
+        is_general: isGeneral, // GUARDAMOS SI ES GENERAL
         x: newCoords?.x || null,
         y: newCoords?.y || null,
         drawing_data: drawingDataString
@@ -270,36 +280,20 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
         
         <div className="flex gap-4 items-center">
-            
             {corrections.length > 0 && (
-                <button 
-                    onClick={handleDownloadPDF}
-                    className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"
-                >
+                <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
                     <span>📄 DESCARGAR PDF CON CORRECCIONES</span>
                 </button>
             )}
 
-            {/* COMPARADOR INTELIGENTE */}
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
-                    <button 
-                        onClick={() => setIsComparing(!isComparing)} 
-                        className={`px-3 py-1.5 rounded-lg font-black text-[10px] uppercase transition-all flex items-center gap-2 ${isComparing ? "bg-slate-800 text-white shadow-md" : "text-slate-500 hover:bg-white"}`}
-                    >
+                    <button onClick={() => setIsComparing(!isComparing)} className={`px-3 py-1.5 rounded-lg font-black text-[10px] uppercase transition-all flex items-center gap-2 ${isComparing ? "bg-slate-800 text-white shadow-md" : "text-slate-500 hover:bg-white"}`}>
                         {isComparing ? "Cerrar" : "⚖️ Comparar"}
                     </button>
                     {isComparing && (
-                        <select 
-                            value={compareTargetId} 
-                            onChange={(e) => setCompareTargetId(e.target.value)}
-                            className="bg-white border border-slate-200 text-slate-700 text-[10px] font-bold py-1.5 px-2 rounded-lg focus:outline-none focus:border-rose-500 uppercase cursor-pointer"
-                        >
-                            {historicalVersions.map((v: any) => (
-                                <option key={v.id} value={v.id}>
-                                    V{v.version}
-                                </option>
-                            ))}
+                        <select value={compareTargetId} onChange={(e) => setCompareTargetId(e.target.value)} className="bg-white border border-slate-200 text-slate-700 text-[10px] font-bold py-1.5 px-2 rounded-lg focus:outline-none focus:border-rose-500 uppercase cursor-pointer">
+                            {historicalVersions.map((v: any) => (<option key={v.id} value={v.id}>V{v.version}</option>))}
                         </select>
                     )}
                 </div>
@@ -356,7 +350,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
                       {corrections.map(c => !c.resolved && c.drawing_data && (
                           c.drawing_data.split('|').map((path: string, i: number) => (
-                              <path key={`${c.id}-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
+                              <path key={`${c.id}-${i}`} d={path} stroke={c.is_general ? "#2563eb" : "#f43f5e"} strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
                           ))
                       ))}
                       {tempDrawings.map((path, i) => <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
@@ -364,7 +358,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   </svg>
 
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
-                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id?"bg-rose-600 scale-150 z-30":"bg-rose-500 hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
+                    <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-rose-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-rose-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
                   
                   {newCoords && <div className="absolute w-8 h-8 bg-rose-500/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
@@ -391,7 +385,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     ) : null}
                   </div>
                   
-                  {/* --- TEXTAREA CON REF PARA EL AUTO-FOCO --- */}
                   <textarea 
                     ref={textareaRef}
                     value={newNote} 
@@ -415,10 +408,16 @@ const ProjectDetail = ({ projects = [] }: any) => {
                              <span>📎</span>
                              {selectedFile ? "LISTO" : "ADJUNTAR"}
                          </label>
-                         <button onClick={handleAddNote} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>
-                             {loading ? "SUBIENDO..." : "GUARDAR"}
+                         <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>
+                             {loading ? "..." : "GUARDAR"}
                          </button>
                      </div>
+                     
+                     {/* --- BOTÓN DE MODIFICACIÓN GENERAL --- */}
+                     <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">
+                         MODIFICACIÓN GENERAL
+                     </button>
+
                      {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
                      {tempDrawings.length > 0 && <button onClick={() => setTempDrawings([])} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold text-right underline">Borrar dibujo actual</button>}
                   </div>
@@ -427,22 +426,39 @@ const ProjectDetail = ({ projects = [] }: any) => {
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
                 {corrections.map((c, i) => (
-                  <div key={c.id} onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`p-4 rounded-2xl border-2 transition-all ${c.resolved?'bg-emerald-50 border-emerald-200 opacity-60':'bg-rose-50 border-rose-200'} ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}>
+                  <div 
+                    key={c.id} 
+                    onMouseEnter={() => setHoveredId(c.id)} 
+                    onMouseLeave={() => setHoveredId(null)} 
+                    className={`p-4 rounded-2xl border-2 transition-all 
+                        ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} 
+                        ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}
+                  >
                     <div className="flex gap-3 items-start">
-                      <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved?"bg-emerald-500 border-emerald-500 text-white":"bg-white border-rose-400 hover:scale-110"}`}>{c.resolved && "✓"}</button>
+                      <button 
+                        onClick={() => toggleCheck(c.id, c.resolved)} 
+                        className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
+                            ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
+                      >
+                          {c.resolved && "✓"}
+                      </button>
+                      
                       <div className="flex-1">
                         <div className="flex justify-between">
-                            <span className="text-[9px] font-black text-rose-300 uppercase">#{i+1}</span>
+                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-rose-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
-                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
+                        
+                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900")}`}>
+                            {c.content}
+                        </p>
                         
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
 
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
+                           <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>
                         </div>
                       </div>
                     </div>
