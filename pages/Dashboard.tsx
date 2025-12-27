@@ -6,14 +6,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   // AÑADIDO: 'visor' como modo por defecto para ver las flechas nada más entrar
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('visor');
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
-  const [comments, setComments] = useState<any[]>([]); 
-  
+  const [comments, setComments] = useState<any[]>([]);
+
   // AÑADIDO: Estado para controlar la página actual en el modo Visor
   const [pageIndex, setPageIndex] = useState(0);
 
@@ -23,7 +23,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const availableVersions = useMemo(() => { const v = new Set<number>(); allItemsInFolder.forEach((p: any) => v.add(p.version || 1)); return Array.from(v).sort((a, b) => a - b); }, [allItemsInFolder]);
 
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
-  
+
   // AÑADIDO: Resetear el índice de página si cambiamos de carpeta o versión
   useEffect(() => { setPageIndex(0); }, [folderId, selectedVersion]);
 
@@ -32,7 +32,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   // --- NAVEGACIÓN VISOR ---
   const prevPage = () => { if (pageIndex > 0) setPageIndex(p => p - 1); };
   const nextPage = () => { if (pageIndex < currentItems.length - 1) setPageIndex(p => p + 1); };
-  
+
   // Teclado para las flechas
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -50,7 +50,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
-    
+
     const { data } = await supabase.from('comments').select('*').in('page_id', pageIds);
     if (data) setComments(data);
   };
@@ -77,7 +77,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const deleteProject = async (e: any, id: number) => { e.stopPropagation(); if(confirm("¿Borrar?")) { await supabase.from('projects').delete().eq('id', id); if(onRefresh) onRefresh(); } };
   const deleteFolder = async (e: any, id: number) => { e.stopPropagation(); if(confirm("¿Borrar?")) { await supabase.from('folders').delete().eq('id', id); if(onRefresh) onRefresh(); } };
-  
+
   const renderTree = (pid: number | null = null, lvl: number = 0) => safeFolders.filter(f => f.parent_id === pid).map(f => {
     const hasChild = safeFolders.some(c => c.parent_id === f.id);
     return (
@@ -102,9 +102,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group">
-        
+
         {/* FLECHA IZQUIERDA */}
-        <button 
+        <button
             onClick={(e) => { e.stopPropagation(); prevPage(); }}
             disabled={pageIndex === 0}
             className={`absolute left-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === 0 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
@@ -115,7 +115,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         {/* IMAGEN CENTRAL */}
         <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
              <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
-             
+
              {/* Info superpuesta en la imagen */}
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
                 {pendingCount > 0 ? (
@@ -139,7 +139,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </div>
 
         {/* FLECHA DERECHA */}
-        <button 
+        <button
             onClick={(e) => { e.stopPropagation(); nextPage(); }}
             disabled={pageIndex === currentItems.length - 1}
             className={`absolute right-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === currentItems.length - 1 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
@@ -155,9 +155,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
-        
+
         <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
-        
+
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
           <div className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Estructura</div>
@@ -178,7 +178,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
                 <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
              </div>
-             
+
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
              <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
