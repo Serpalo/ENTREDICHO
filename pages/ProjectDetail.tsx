@@ -79,13 +79,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
     projects.find((p: any) => String(p.id) === String(compareTargetId)),
   [projects, compareTargetId]);
 
-  // --- ESTADOS DIBUJO MEJORADOS ---
+  // ESTADOS DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
-  // Nuevo estado para saber qué herramienta usamos
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen'); 
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
-  // TempDrawings ahora guarda el path Y la herramienta usada
   const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -182,15 +180,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
-  // --- LÓGICA DE PUNTERO MEJORADA ---
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
-
     if (isDrawingMode) {
         setIsDrawing(true);
         const { x, y } = getRelativeCoords(e);
         setCurrentPath(`M ${x} ${y}`);
-        // Importante: en móviles, evita que se mueva la pantalla al dibujar
         e.preventDefault(); 
     } else {
         const { x, y } = getRelativeCoords(e);
@@ -203,7 +198,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   const handlePointerMove = (e: any) => {
     if (!isDrawing || !isDrawingMode) return;
-    // Prevenir scroll en móviles mientras se dibuja
     e.preventDefault(); 
     const { x, y } = getRelativeCoords(e);
     setCurrentPath(prev => `${prev} L ${x} ${y}`);
@@ -211,14 +205,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   const handlePointerUp = () => {
     if (isDrawing && isDrawingMode && currentPath) {
-        // Guardamos el path junto con la herramienta que se usó
         setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]);
         setCurrentPath("");
     }
     setIsDrawing(false);
   };
 
-  // --- GUARDAR NOTA (Actualizado con drawing_tool) ---
   const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
@@ -234,9 +226,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         fileUrl = data.publicUrl;
       }
 
-      // Extraemos solo los paths para guardarlos juntos
       const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null;
-      // Usamos la herramienta del último dibujo hecho (o 'pen' por defecto)
       const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen';
 
       const { error: insertError } = await supabase.from('comments').insert([{
@@ -248,7 +238,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         x: newCoords?.x || null,
         y: newCoords?.y || null,
         drawing_data: drawingDataString,
-        drawing_tool: usedTool, // <-- NUEVO CAMPO EN DB
+        drawing_tool: usedTool,
       }]);
 
       if (insertError) alert("Error al guardar: " + insertError.message);
@@ -258,8 +248,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         setNewCoords(null);
         setTempDrawings([]); 
         setCurrentPath("");
-        // No desactivamos isDrawingMode para poder seguir dibujando si se quiere
-        // setIsDrawingMode(false); 
         loadCorrections(); 
       }
     } catch (err: any) {
@@ -282,13 +270,13 @@ const ProjectDetail = ({ projects = [] }: any) => {
     }
   };
 
-  // Helper para obtener estilos de dibujo
-  const getStrokeStyle = (tool: DrawingTool | string) => {
+  // Helper para estilos estáticos (dibujo actual)
+  const getStrokeStyle = (tool: DrawingTool) => {
       const isHighlighter = tool === 'highlighter';
       return {
-          color: isHighlighter ? "#fde047" : "#f43f5e", // Amarillo neón vs Rojo
-          width: isHighlighter ? "2" : "0.5", // Grueso vs Fino
-          opacity: isHighlighter ? "0.5" : "1" // Transparente vs Opaco
+          color: isHighlighter ? "#fde047" : "#f43f5e", 
+          width: isHighlighter ? "2" : "0.5",
+          opacity: isHighlighter ? "0.5" : "1"
       };
   };
 
@@ -366,31 +354,53 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     onPointerMove={handlePointerMove} 
                     onPointerUp={handlePointerUp} 
                     onPointerLeave={handlePointerUp}
-                    // Cambiamos el cursor dependiendo de la herramienta activa
                     className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
                     style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
                 >
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      {/* DIBUJOS GUARDADOS */}
+                      {/* --- LÓGICA DE DIBUJO CON EFECTO HOVER --- */}
                       {corrections.map(c => !c.resolved && c.drawing_data && (
                           c.drawing_data.split('|').map((path: string, i: number) => {
-                              // Usamos el estilo guardado en la base de datos
-                              const style = getStrokeStyle(c.drawing_tool || 'pen');
+                              const isHovered = hoveredId === c.id;
+                              const isHighlighter = c.drawing_tool === 'highlighter';
+                              
+                              // 1. Color: Amarillo si es subrayador, Azul si es general, Rojo por defecto
+                              let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; 
+                              if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
+                              
+                              // 2. Grosor y Opacidad Dinámicos
+                              // Si es hover -> mucho más grueso y visible
+                              const strokeWidth = isHighlighter 
+                                  ? (isHovered ? "4" : "2") 
+                                  : (isHovered ? "1.5" : "0.5");
+                                  
+                              const opacity = isHighlighter 
+                                  ? (isHovered ? "0.8" : "0.5") 
+                                  : "1";
+
                               return (
-                                  <path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md" : ""} />
+                                  <path 
+                                      key={`${c.id}-${i}`} 
+                                      d={path} 
+                                      stroke={strokeColor} 
+                                      strokeWidth={strokeWidth} 
+                                      opacity={opacity} 
+                                      fill="none" 
+                                      strokeLinecap="round" 
+                                      strokeLinejoin="round" 
+                                      className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} 
+                                  />
                               );
                           })
                       ))}
                       
-                      {/* DIBUJOS TEMPORALES (Los que acabas de hacer pero no has guardado) */}
+                      {/* Dibujos Temporales y Actuales */}
                       {tempDrawings.map((item, i) => {
                           const style = getStrokeStyle(item.tool);
                           return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       })}
-                      
-                      {/* DIBUJO ACTUAL (El que estás haciendo ahora mismo) */}
                       {currentPath && (
                           <path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       )}
@@ -435,7 +445,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                   />
                   
                   <div className="flex flex-col gap-2">
-                     {/* --- NUEVO: SELECTOR DE HERRAMIENTAS --- */}
                      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
                          <button 
                             onClick={() => { 
