@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 
@@ -12,14 +12,35 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // NAVEGACIÓN HERMANOS
-  const project = projects.find((p: any) => String(p.id) === String(projectId));
-  const siblings = project 
-    ? projects.filter((p: any) => p.parent_id === project.parent_id).sort((a: any, b: any) => a.name.localeCompare(b.name))
-    : [];
+  // 1. IDENTIFICAR PROYECTO ACTUAL
+  const project = useMemo(() => 
+    projects.find((p: any) => String(p.id) === String(projectId)), 
+  [projects, projectId]);
+
+  // 2. NAVEGACIÓN HERMANOS (Siguiente / Anterior en la misma versión)
+  const siblings = useMemo(() => {
+    if (!project) return [];
+    return projects
+      .filter((p: any) => p.parent_id === project.parent_id && p.version === project.version)
+      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [projects, project]);
+
   const currentIndex = siblings.findIndex((p: any) => String(p.id) === String(projectId));
   const prevProject = siblings[currentIndex - 1];
   const nextProject = siblings[currentIndex + 1];
+
+  // 3. LÓGICA DE VERSIONES (Para el Comparador)
+  // Buscamos páginas en la misma carpeta, con el MISMO NOMBRE, pero distinta versión
+  const historicalVersions = useMemo(() => {
+    if (!project) return [];
+    return projects
+      .filter((p: any) => 
+        p.parent_id === project.parent_id && 
+        p.name === project.name && 
+        p.id !== project.id // No compararse consigo mismo
+      )
+      .sort((a: any, b: any) => b.version - a.version); // Ordenar descendente (V3, V2, V1...)
+  }, [projects, project]);
 
   // ESTADOS VISUALES
   const [newCoords, setNewCoords] = useState<{x: number, y: number} | null>(null);
@@ -27,7 +48,21 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isComparing, setIsComparing] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
-  const [compareProject, setCompareProject] = useState<any>(null);
+  
+  // ESTADO PARA LA VERSIÓN SELECCIONADA A COMPARAR
+  const [compareTargetId, setCompareTargetId] = useState<string>("");
+
+  // Seleccionar automáticamente la versión anterior más reciente al cargar
+  useEffect(() => {
+    if (historicalVersions.length > 0 && !compareTargetId) {
+      setCompareTargetId(String(historicalVersions[0].id));
+    }
+  }, [historicalVersions, compareTargetId]);
+
+  const compareProject = useMemo(() => 
+    projects.find((p: any) => String(p.id) === String(compareTargetId)),
+  [projects, compareTargetId]);
+
 
   // ESTADOS PARA DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
@@ -37,7 +72,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // 1. CARGA DE NOTAS
+  // CARGA DE NOTAS
   const loadCorrections = async () => {
     if (!projectId) return;
     
@@ -52,22 +87,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
   };
 
   useEffect(() => { loadCorrections(); }, [projectId]);
-
-  // Comparador
-  useEffect(() => {
-    if (project && projects.length > 0) {
-      const sameFolder = projects.filter((p: any) => p.parent_id === project.parent_id);
-      const prevVer = sameFolder.find((p: any) => p.version === (project.version - 1) && p.name === project.name);
-      if (!prevVer) {
-         const currentVerList = sameFolder.filter((p: any) => p.version === project.version);
-         const prevVerList = sameFolder.filter((p: any) => p.version === (project.version - 1));
-         const idx = currentVerList.findIndex((p: any) => p.id === project.id);
-         if (prevVerList[idx]) setCompareProject(prevVerList[idx]);
-      } else {
-         setCompareProject(prevVer);
-      }
-    }
-  }, [project, projects]);
 
   const handleSliderMove = (e: any) => {
     if (!imageContainerRef.current) return;
@@ -119,7 +138,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setIsDrawing(false);
   };
 
-  // 2. GUARDADO DE NOTA
+  // GUARDADO DE NOTA
   const handleAddNote = async () => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
@@ -187,18 +206,44 @@ const ProjectDetail = ({ projects = [] }: any) => {
           <button onClick={() => navigate(-1)} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200">← VOLVER</button>
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md">{project.name}</h2>
         </div>
+        
         <div className="flex gap-4 items-center">
-            {compareProject ? (
-              <button onClick={() => setIsComparing(!isComparing)} className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all ${isComparing ? "bg-slate-800 text-white" : "bg-white border text-slate-600"}`}>
-                {isComparing ? "❌ Cerrar" : "⚖️ Comparar V" + compareProject.version}
-              </button>
-            ) : project.version > 1 && <span className="text-[9px] text-slate-300 font-bold">SIN PREVIO</span>}
+            
+            {/* --- SELECTOR DE COMPARACIÓN MEJORADO --- */}
+            {historicalVersions.length > 0 ? (
+                <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                    <button 
+                        onClick={() => setIsComparing(!isComparing)} 
+                        className={`px-3 py-1.5 rounded-lg font-black text-[10px] uppercase transition-all flex items-center gap-2 ${isComparing ? "bg-slate-800 text-white shadow-md" : "text-slate-500 hover:bg-white"}`}
+                    >
+                        {isComparing ? "Cerrar Comparador" : "⚖️ Comparar"}
+                    </button>
+                    
+                    {isComparing && (
+                        <select 
+                            value={compareTargetId} 
+                            onChange={(e) => setCompareTargetId(e.target.value)}
+                            className="bg-white border border-slate-200 text-slate-700 text-[10px] font-bold py-1.5 px-2 rounded-lg focus:outline-none focus:border-rose-500 uppercase cursor-pointer"
+                        >
+                            {historicalVersions.map((v: any) => (
+                                <option key={v.id} value={v.id}>
+                                    Contra V{v.version}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+            ) : (
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN VERSIONES PREVIAS</span>
+            )}
+            {/* -------------------------------------- */}
+
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
                 <button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">-</button>
                 <span className="text-[10px] font-black w-12 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
                 <button onClick={() => setZoomLevel(zoomLevel + 0.5)} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">+</button>
             </div>
-            <div className="px-3 py-1 bg-rose-600 rounded-lg text-[10px] font-black text-white uppercase">V{project.version}</div>
+            <div className="px-3 py-1 bg-rose-600 rounded-lg text-[10px] font-black text-white uppercase shadow-md shadow-rose-200">V{project.version}</div>
         </div>
       </div>
 
@@ -214,14 +259,35 @@ const ProjectDetail = ({ projects = [] }: any) => {
             )}
 
             {isComparing && compareProject ? (
+                /* MODO COMPARADOR */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
+                    {/* IMAGEN NUEVA (FONDO) */}
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
+                    
+                    {/* IMAGEN VIEJA (RECORTADA POR SLIDER) */}
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
-                        <img src={compareProject.image_url} className="absolute top-0 left-0 w-[100vw] max-w-none h-full object-contain pointer-events-none" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }} />
+                        <div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}>
+                            <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
+                            {/* Etiqueta flotante para saber qué estamos viendo */}
+                            <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">
+                                V{compareProject.version} (Anterior)
+                            </div>
+                        </div>
                     </div>
-                    <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
+                    
+                    {/* BARRA DESLIZANTE */}
+                    <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}>
+                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200">
+                            <span className="text-slate-400 text-[10px]">↔</span>
+                        </div>
+                    </div>
+                    
+                    <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">
+                         V{project.version} (Actual)
+                    </div>
                 </div>
             ) : (
+                /* MODO EDICIÓN NORMAL */
                 <div 
                     ref={imageContainerRef} 
                     onPointerDown={handlePointerDown} 
@@ -315,7 +381,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
                         <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
-                           {/* --- AQUÍ ESTÁ EL CAMBIO DE FECHA Y HORA --- */}
                            <span className="text-[9px] text-slate-400 font-bold">
                                {new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                            </span>
