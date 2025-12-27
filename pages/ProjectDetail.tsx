@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
+import { jsPDF } from "jspdf";
 
 const ProjectDetail = ({ projects = [] }: any) => {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     projects.find((p: any) => String(p.id) === String(projectId)), 
   [projects, projectId]);
 
-  // 2. NAVEGACIÓN HERMANOS (Siguiente / Anterior en la misma versión)
+  // 2. NAVEGACIÓN HERMANOS
   const siblings = useMemo(() => {
     if (!project) return [];
     return projects
@@ -29,31 +30,40 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const prevProject = siblings[currentIndex - 1];
   const nextProject = siblings[currentIndex + 1];
 
-  // 3. LÓGICA DE COMPARACIÓN (Por posición)
+  // 3. COMPARACIÓN INTELIGENTE (Por posición)
   const historicalVersions = useMemo(() => {
     if (!project) return [];
     
+    // Proyectos de la misma carpeta
     const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
+    
+    // Buscamos mi posición (índice) dentro de mi versión actual
     const myVersionSiblings = folderProjects
         .filter((p: any) => p.version === project.version)
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
         
     const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
+    
     if (myPositionIndex === -1) return [];
 
+    // Versiones disponibles
     const availableVersions = [...new Set(folderProjects.map((p: any) => p.version))]
         .filter((v: any) => v !== project.version)
         .sort((a: any, b: any) => b - a);
 
     const matches = [];
+    
+    // Buscamos la imagen en la MISMA posición en las otras versiones
     for (const v of availableVersions) {
         const versionSiblings = folderProjects
             .filter((p: any) => p.version === v)
             .sort((a: any, b: any) => a.name.localeCompare(b.name));
+            
         if (versionSiblings[myPositionIndex]) {
             matches.push(versionSiblings[myPositionIndex]);
         }
     }
+
     return matches;
   }, [projects, project]);
 
@@ -77,7 +87,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
     projects.find((p: any) => String(p.id) === String(compareTargetId)),
   [projects, compareTargetId]);
 
-
   // ESTADOS PARA DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -86,20 +95,75 @@ const ProjectDetail = ({ projects = [] }: any) => {
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // CARGA DE NOTAS
+  // CARGA DE NOTAS (Orden ascendente/cronológico)
   const loadCorrections = async () => {
     if (!projectId) return;
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .eq('page_id', projectId) 
-      // CAMBIO REALIZADO AQUÍ: ascending: true (Orden cronológico: de antigua a nueva)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }); // <--- IMPORTANTE: Orden cronológico
     if (error) console.error("Error cargando notas:", error);
     setCorrections(data || []);
   };
 
   useEffect(() => { loadCorrections(); }, [projectId]);
+
+  // --- GENERADOR PDF ---
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const title = project ? `Correcciones: ${project.name}` : "Correcciones";
+    
+    doc.setFontSize(16);
+    doc.setTextColor(225, 29, 72);
+    doc.text(title, 10, 15);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22);
+    
+    doc.setLineWidth(0.5);
+    doc.line(10, 25, 200, 25);
+
+    let yPosition = 35;
+
+    corrections.forEach((c, index) => {
+        if (yPosition > 270) { doc.addPage(); yPosition = 20; }
+
+        const status = c.resolved ? "[HECHO]" : "[PENDIENTE]";
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(c.resolved ? 16 : 225, c.resolved ? 185 : 29, c.resolved ? 129 : 72);
+        doc.text(`${index + 1}. ${status}`, 10, yPosition);
+
+        const date = new Date(c.created_at).toLocaleString();
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(150);
+        doc.text(date, 150, yPosition);
+
+        yPosition += 5;
+        doc.setTextColor(0);
+        const splitText = doc.splitTextToSize(c.content || "(Sin texto, solo marca visual)", 180);
+        doc.text(splitText, 15, yPosition);
+        
+        let extraInfo = [];
+        if (c.drawing_data) extraInfo.push("Contiene dibujo en imagen");
+        if (c.attachment_url) extraInfo.push("Contiene archivo adjunto");
+        
+        if(extraInfo.length > 0) {
+            yPosition += (splitText.length * 4) + 2;
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(`(${extraInfo.join(", ")})`, 15, yPosition);
+        }
+
+        yPosition += (splitText.length * 5) + 10;
+        doc.setDrawColor(240);
+        doc.line(10, yPosition - 5, 200, yPosition - 5);
+    });
+
+    doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
+  };
 
   const handleSliderMove = (e: any) => {
     if (!imageContainerRef.current) return;
@@ -109,13 +173,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setSliderPosition((x / rect.width) * 100);
   };
 
-  // --- LÓGICA DE DIBUJO ---
+  // LÓGICA DE DIBUJO
   const getRelativeCoords = (e: any) => {
     if (!imageContainerRef.current) return { x: 0, y: 0 };
     const rect = imageContainerRef.current.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
     const x = ((clientX - rect.left) / rect.width) * 100;
     const y = ((clientY - rect.top) / rect.height) * 100;
     return { x, y };
@@ -123,7 +186,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
-
     if (isDrawingMode) {
         setIsDrawing(true);
         const { x, y } = getRelativeCoords(e);
@@ -151,7 +213,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setIsDrawing(false);
   };
 
-  // GUARDADO DE NOTA
+  // GUARDADO
   const handleAddNote = async () => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
@@ -222,16 +284,25 @@ const ProjectDetail = ({ projects = [] }: any) => {
         
         <div className="flex gap-4 items-center">
             
-            {/* --- SELECTOR DE COMPARACIÓN INTELIGENTE --- */}
+            {/* BOTÓN PDF */}
+            {corrections.length > 0 && (
+                <button 
+                    onClick={handleDownloadPDF}
+                    className="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2"
+                >
+                    <span>📄 PDF</span>
+                </button>
+            )}
+
+            {/* COMPARADOR INTELIGENTE */}
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                     <button 
                         onClick={() => setIsComparing(!isComparing)} 
                         className={`px-3 py-1.5 rounded-lg font-black text-[10px] uppercase transition-all flex items-center gap-2 ${isComparing ? "bg-slate-800 text-white shadow-md" : "text-slate-500 hover:bg-white"}`}
                     >
-                        {isComparing ? "Cerrar Comparador" : "⚖️ Comparar"}
+                        {isComparing ? "Cerrar" : "⚖️ Comparar"}
                     </button>
-                    
                     {isComparing && (
                         <select 
                             value={compareTargetId} 
@@ -240,14 +311,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
                         >
                             {historicalVersions.map((v: any) => (
                                 <option key={v.id} value={v.id}>
-                                    Contra V{v.version}
+                                    V{v.version}
                                 </option>
                             ))}
                         </select>
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO (POSICIÓN {currentIndex + 1})</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>
             )}
             
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -264,7 +335,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* ZONA CENTRAL */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {/* === FLECHAS DE NAVEGACIÓN (Solo si NO estamos comparando) === */}
+            {/* FLECHA IZQUIERDA (Oculta si comparamos) */}
             {!isComparing && prevProject && (
                 <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -274,32 +345,20 @@ const ProjectDetail = ({ projects = [] }: any) => {
             {isComparing && compareProject ? (
                 /* MODO COMPARADOR */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
-                    {/* IMAGEN NUEVA */}
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                    
-                    {/* IMAGEN VIEJA (RECORTADA) */}
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
                         <div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}>
                             <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                            <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">
-                                V{compareProject.version} (Anterior)
-                            </div>
+                            <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{compareProject.version} (Anterior)</div>
                         </div>
                     </div>
-                    
-                    {/* BARRA */}
                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}>
-                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200">
-                            <span className="text-slate-400 text-[10px]">↔</span>
-                        </div>
+                        <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div>
                     </div>
-                    
-                    <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">
-                         V{project.version} (Actual)
-                    </div>
+                    <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{project.version} (Actual)</div>
                 </div>
             ) : (
-                /* MODO EDICIÓN NORMAL */
+                /* MODO EDICIÓN */
                 <div 
                     ref={imageContainerRef} 
                     onPointerDown={handlePointerDown} 
@@ -317,12 +376,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
                               <path key={`${c.id}-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={hoveredId===c.id ? "drop-shadow-md stroke-[0.8]" : ""} />
                           ))
                       ))}
-                      {tempDrawings.map((path, i) => (
-                          <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      ))}
-                      {currentPath && (
-                          <path d={currentPath} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      )}
+                      {tempDrawings.map((path, i) => <path key={`temp-${i}`} d={path} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+                      {currentPath && <path d={currentPath} stroke="#f43f5e" strokeWidth="0.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
                   </svg>
 
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
@@ -333,6 +388,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 </div>
             )}
 
+            {/* FLECHA DERECHA (Oculta si comparamos) */}
             {!isComparing && nextProject && (
                 <button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -381,21 +437,22 @@ const ProjectDetail = ({ projects = [] }: any) => {
               
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
-                {corrections.map((c) => (
+                {corrections.map((c, i) => (
                   <div key={c.id} onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`p-4 rounded-2xl border-2 transition-all ${c.resolved?'bg-emerald-50 border-emerald-200 opacity-60':'bg-rose-50 border-rose-200'} ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}>
                     <div className="flex gap-3 items-start">
                       <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved?"bg-emerald-500 border-emerald-500 text-white":"bg-white border-rose-400 hover:scale-110"}`}>{c.resolved && "✓"}</button>
                       <div className="flex-1">
-                        <p className={`text-sm font-bold leading-snug ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
+                        <div className="flex justify-between">
+                            <span className="text-[9px] font-black text-rose-300 uppercase">#{i+1}</span>
+                            <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                           {c.drawing_data && <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-200">✏️ Dibujo</span>}
                           {c.x !== null && !c.drawing_data && <span className="text-[8px] font-black bg-white/50 text-rose-600 px-1.5 py-0.5 rounded uppercase border border-rose-100">🎯 Mapa</span>}
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
-                        <div className="mt-2 flex justify-between items-center pt-2 border-t border-slate-200/50">
-                           <span className="text-[9px] text-slate-400 font-bold">
-                               {new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                           </span>
+                        <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
                            <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black text-rose-300 hover:text-rose-600 uppercase">Borrar</button>
                         </div>
                       </div>
