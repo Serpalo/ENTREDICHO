@@ -40,7 +40,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // 2. Carga de comentarios (Robustez máxima)
+  // 2. Carga de comentarios
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
@@ -79,7 +79,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const toggleFolder = (id: number, e: React.MouseEvent) => { e.stopPropagation(); setOpenFolders(prev => ({ ...prev, [id]: !prev[id] })); };
   const handleDeleteFolder = async (e: React.MouseEvent, id: number) => { e.stopPropagation(); if (window.confirm("¿Eliminar carpeta?")) { await supabase.from('folders').delete().eq('id', id); if (onRefresh) onRefresh(); } };
   
-  // --- SUBIDA SEGURA (Nombre limpio para evitar error) ---
+  // --- SUBIDA SEGURA ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -89,7 +89,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // Limpiamos el nombre: Tildes fuera, espacios fuera
       const sanitizedName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
       const paddedIndex = String(i + 1).padStart(3, '0');
       const safeStorageName = `${uploadTimestamp}-${paddedIndex}-${sanitizedName}`;
@@ -104,11 +103,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       const { data: publicUrlData } = supabase.storage.from('FOLLETOS').getPublicUrl(safeStorageName);
       
       await supabase.from('projects').insert([{ 
-        name: file.name, // Nombre bonito para ti
+        name: file.name, 
         parent_id: folderId ? parseInt(folderId) : null, 
         image_url: publicUrlData.publicUrl, 
         version: nextVersion, 
-        storage_name: safeStorageName // Nombre seguro para la nube
+        storage_name: safeStorageName
       }]);
     }
     
@@ -117,7 +116,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     alert(`Versión ${nextVersion} subida con éxito`);
   };
 
-  // --- RENDERIZADO DE CONTENIDO (BLOQUES SEPARADOS PARA EVITAR ERRORES) ---
+  // --- RENDERIZADO DE CONTENIDO ---
   
   let content;
 
@@ -146,6 +145,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </thead>
           <tbody>
             {currentItems.map((p: any) => {
+              // Convertimos a String para asegurar coincidencia
               const myComments = comments.filter(c => String(c.page_id) === String(p.id));
               const pendingCount = myComments.filter(c => !c.resolved).length;
               
@@ -159,25 +159,37 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                   <td className="px-4 py-6 align-top">
                     <p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter break-words pr-4">{p.name}</p>
                   </td>
+                  
+                  {/* AQUÍ ESTÁ EL CAMBIO IMPORTANTE: CONTADOR DE CORRECCIONES */}
                   <td className="px-4 py-6 align-top">
                     <div className="flex flex-col gap-2">
                       {pendingCount > 0 ? (
-                        <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-50 w-fit px-2 py-0.5 rounded">⚠️ {pendingCount} PENDIENTES</div>
+                        // CASO: Hay pendientes (ROJO)
+                        <span className="bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg text-[10px] font-black w-fit border border-rose-200 shadow-sm flex items-center gap-2 animate-pulse">
+                          🚨 {pendingCount} PENDIENTE{pendingCount !== 1 ? 'S' : ''}
+                        </span>
                       ) : myComments.length > 0 ? (
-                        <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-50 w-fit px-2 py-0.5 rounded">✓ TODO HECHO</div>
+                         // CASO: Todo hecho (VERDE)
+                        <span className="bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-lg text-[10px] font-black w-fit border border-emerald-200 shadow-sm flex items-center gap-2">
+                          ✓ TODO HECHO
+                        </span>
                       ) : (
-                        <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>
+                        // CASO: Sin notas (GRIS)
+                        <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
                       )}
+
+                      {/* Lista detallada de notas debajo */}
                       {myComments.map(c => (
-                        <div key={c.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${c.resolved ? 'bg-emerald-100 border-emerald-200' : 'bg-rose-100 border-rose-200'}`}>
-                          <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
+                        <div key={c.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-rose-200 shadow-sm'}`}>
+                          <div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded-md border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-sm ${c.resolved ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-rose-400 hover:scale-110'}`}>
                             {c.resolved && <span className="text-white text-[10px] font-bold">✓</span>}
                           </div>
-                          <span className={`text-xs font-bold leading-tight ${c.resolved ? 'text-emerald-800 line-through opacity-60' : 'text-rose-800'}`}>{c.content}</span>
+                          <span className={`text-xs font-bold leading-tight ${c.resolved ? 'text-emerald-800 line-through opacity-60' : 'text-slate-700'}`}>{c.content}</span>
                         </div>
                       ))}
                     </div>
                   </td>
+
                   <td className="px-8 py-6 text-right align-top">
                     <div className="flex flex-col gap-2 items-end">
                       <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase tracking-widest border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 transition-colors">Revisar →</button>
@@ -202,8 +214,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
               <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer">
                 {p.image_url ? <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black italic">SIN IMAGEN</div>}
-                {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse">{pendingCount} CORRECCIONES</div>}
-                {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10">✓ COMPLETADO</div>}
+                
+                {/* Badge en modo Grid */}
+                {pendingCount > 0 ? (
+                   <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">
+                      {pendingCount} CORRECCIONES
+                   </div>
+                ) : myComments.length > 0 && (
+                   <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">
+                      ✓ TODO HECHO
+                   </div>
+                )}
+                
                 <button onClick={(e) => handleDeleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm font-bold">✕</button>
               </div>
               <div className="p-6 flex flex-col gap-3">
@@ -281,7 +303,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         )}
 
-        {/* AQUÍ VA EL CONTENIDO SELECCIONADO (SIN LÍOS DE LLAVES) */}
+        {/* AQUÍ VA EL CONTENIDO SELECCIONADO */}
         {content}
 
       </div>
