@@ -13,7 +13,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // REFERENCIA PARA EL AUTO-FOCO
+  // REFERENCIA PARA EL AUTO-FOCO (El truco para escribir directo)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // 1. IDENTIFICAR PROYECTO ACTUAL
@@ -165,7 +165,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
-  // AUTO-FOCO
+  // --- AUTO-FOCO MEJORADO (AQUÍ ESTÁ LA CLAVE) ---
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
     if (isDrawingMode) {
@@ -177,7 +177,12 @@ const ProjectDetail = ({ projects = [] }: any) => {
         const { x, y } = getRelativeCoords(e);
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
             setNewCoords({ x: x/100, y: y/100 });
-            textareaRef.current?.focus();
+            // Usamos setTimeout para asegurar que el foco se aplica DESPUÉS de que React pinte el punto
+            setTimeout(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                }
+            }, 50);
         }
     }
   };
@@ -386,6 +391,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     ) : null}
                   </div>
                   
+                  {/* --- TEXTAREA CON REF PARA EL AUTO-FOCO --- */}
                   <textarea 
                     ref={textareaRef}
                     value={newNote} 
@@ -431,7 +437,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                         </div>
                         <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved?"text-emerald-800 line-through":"text-rose-900"}`}>{c.content}</p>
                         
-                        {/* --- ETIQUETAS ELIMINADAS AQUÍ, SOLO QUEDA ADJUNTO --- */}
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
