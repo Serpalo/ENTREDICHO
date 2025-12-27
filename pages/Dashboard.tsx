@@ -7,6 +7,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const { folderId } = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // ESTADOS
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
@@ -20,9 +21,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // 1. CARGA (SIN parseInt)
+  // CARGA DE COMENTARIOS (Usando ID como texto, gracias a tu arreglo en Supabase)
   const loadComments = async () => {
-    // Usamos el ID tal cual (UUID/Texto)
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
     
@@ -31,12 +31,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
-
-  const toggleCommentResolved = async (id: string, current: boolean) => {
-    setComments(prev => prev.map(c => c.id === id ? { ...c, resolved: !current } : c));
-    await supabase.from('comments').update({ resolved: !current }).eq('id', id);
-    loadComments();
-  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -113,12 +107,20 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
                       <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
                       <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
+                      
+                      {/* AQUÍ ESTÁ EL CAMBIO: SOLO MOSTRAMOS EL AVISO, NO LA LISTA */}
                       <td className="px-4 py-6 align-top">
                         <div className="flex flex-col gap-2">
-                           {pendingCount > 0 ? <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-50 w-fit px-2 py-0.5 rounded animate-pulse">🚨 {pendingCount} PENDIENTES</div> : myComments.length > 0 ? <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-50 w-fit px-2 py-0.5 rounded">✓ TODO HECHO</div> : <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin correcciones</span>}
-                           {myComments.map(c => (<div key={c.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-all ${c.resolved?'bg-emerald-50 border-emerald-200':'bg-white border-rose-200 shadow-sm'}`}><div onClick={() => toggleCommentResolved(c.id, c.resolved)} className={`w-5 h-5 rounded border-2 mt-0.5 flex items-center justify-center cursor-pointer transition-colors ${c.resolved?'bg-emerald-500 border-emerald-500 text-white':'bg-white border-rose-400'}`}>{c.resolved && "✓"}</div><span className={`text-xs font-bold ${c.resolved?'text-emerald-800 line-through opacity-60':'text-slate-800'}`}>{c.content}</span></div>))}
+                           {pendingCount > 0 ? (
+                             <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
+                           ) : myComments.length > 0 ? (
+                             <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
+                           ) : (
+                             <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
+                           )}
                         </div>
                       </td>
+
                       <td className="px-8 py-6 text-right align-top"><button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button><button onClick={(e) => deleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase">Eliminar</button></td>
                     </tr>
                   );
@@ -134,8 +136,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                  return (
                   <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                     <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse">{pendingCount} CORRECCIONES</div>}
-                      {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10">✓ HECHO</div>}
+                      {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>}
+                      {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>}
                       <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
                     </div>
                     <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
