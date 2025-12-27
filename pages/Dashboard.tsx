@@ -21,7 +21,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // CARGA DE COMENTARIOS (Usando ID como texto, gracias a tu arreglo en Supabase)
+  // CARGA DE COMENTARIOS
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
@@ -98,7 +98,19 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         ) : viewMode === 'list' ? (
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
             <table className="w-full text-left table-fixed">
-              <thead><tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50"><th className="px-8 py-6 w-32">Vista</th><th className="px-4 py-6 w-1/4">Página</th><th className="px-4 py-6">Correcciones</th><th className="px-8 py-6 text-right w-40">Acción</th></tr></thead>
+              <thead>
+                <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
+                  <th className="px-8 py-6 w-32">Vista</th>
+                  
+                  {/* HE AUMENTADO EL ANCHO DE LA COLUMNA DE PÁGINA (w-5/12) */}
+                  <th className="px-4 py-6 w-5/12">Página</th>
+                  
+                  {/* HE AÑADIDO 'pl-12' (PADDING LEFT) PARA EMPUJARLO A LA DERECHA */}
+                  <th className="pl-12 py-6 w-3/12">Correcciones</th>
+                  
+                  <th className="px-8 py-6 text-right w-40">Acción</th>
+                </tr>
+              </thead>
               <tbody>
                 {currentItems.map((p: any) => {
                   const myComments = comments.filter(c => String(c.page_id) === String(p.id));
@@ -108,8 +120,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                       <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
                       <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
                       
-                      {/* AQUÍ ESTÁ EL CAMBIO: SOLO MOSTRAMOS EL AVISO, NO LA LISTA */}
-                      <td className="px-4 py-6 align-top">
+                      {/* APLICAMOS TAMBIÉN EL DESPLAZAMIENTO 'pl-12' AQUÍ */}
+                      <td className="pl-12 py-6 align-top">
                         <div className="flex flex-col gap-2">
                            {pendingCount > 0 ? (
                              <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
