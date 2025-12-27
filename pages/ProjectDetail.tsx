@@ -13,6 +13,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
+  // REFERENCIA PARA EL AUTO-FOCO
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
   // 1. IDENTIFICAR PROYECTO ACTUAL
   const project = useMemo(() => 
     projects.find((p: any) => String(p.id) === String(projectId)), 
@@ -30,40 +33,29 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const prevProject = siblings[currentIndex - 1];
   const nextProject = siblings[currentIndex + 1];
 
-  // 3. COMPARACIÓN INTELIGENTE (Por posición)
+  // 3. COMPARACIÓN INTELIGENTE
   const historicalVersions = useMemo(() => {
     if (!project) return [];
-    
-    // Proyectos de la misma carpeta
     const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
-    
-    // Buscamos mi posición (índice) dentro de mi versión actual
     const myVersionSiblings = folderProjects
         .filter((p: any) => p.version === project.version)
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
-        
     const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
-    
     if (myPositionIndex === -1) return [];
 
-    // Versiones disponibles
     const availableVersions = [...new Set(folderProjects.map((p: any) => p.version))]
         .filter((v: any) => v !== project.version)
         .sort((a: any, b: any) => b - a);
 
     const matches = [];
-    
-    // Buscamos la imagen en la MISMA posición en las otras versiones
     for (const v of availableVersions) {
         const versionSiblings = folderProjects
             .filter((p: any) => p.version === v)
             .sort((a: any, b: any) => a.name.localeCompare(b.name));
-            
         if (versionSiblings[myPositionIndex]) {
             matches.push(versionSiblings[myPositionIndex]);
         }
     }
-
     return matches;
   }, [projects, project]);
 
@@ -73,8 +65,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isComparing, setIsComparing] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
-  
-  // ESTADO PARA LA VERSIÓN SELECCIONADA A COMPARAR
   const [compareTargetId, setCompareTargetId] = useState<string>("");
 
   useEffect(() => {
@@ -87,29 +77,28 @@ const ProjectDetail = ({ projects = [] }: any) => {
     projects.find((p: any) => String(p.id) === String(compareTargetId)),
   [projects, compareTargetId]);
 
-  // ESTADOS PARA DIBUJO
+  // ESTADOS DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
   const [tempDrawings, setTempDrawings] = useState<string[]>([]);
-  
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // CARGA DE NOTAS (Orden ascendente/cronológico)
+  // CARGA DE NOTAS
   const loadCorrections = async () => {
     if (!projectId) return;
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .eq('page_id', projectId) 
-      .order('created_at', { ascending: true }); // <--- IMPORTANTE: Orden cronológico
+      .order('created_at', { ascending: true });
     if (error) console.error("Error cargando notas:", error);
     setCorrections(data || []);
   };
 
   useEffect(() => { loadCorrections(); }, [projectId]);
 
-  // --- GENERADOR PDF ---
+  // PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const title = project ? `Correcciones: ${project.name}` : "Correcciones";
@@ -117,11 +106,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
     doc.setFontSize(16);
     doc.setTextColor(225, 29, 72);
     doc.text(title, 10, 15);
-    
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22);
-    
     doc.setLineWidth(0.5);
     doc.line(10, 25, 200, 25);
 
@@ -129,13 +116,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
     corrections.forEach((c, index) => {
         if (yPosition > 270) { doc.addPage(); yPosition = 20; }
-
         const status = c.resolved ? "[HECHO]" : "[PENDIENTE]";
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(c.resolved ? 16 : 225, c.resolved ? 185 : 29, c.resolved ? 129 : 72);
         doc.text(`${index + 1}. ${status}`, 10, yPosition);
-
         const date = new Date(c.created_at).toLocaleString();
         doc.setFont("helvetica", "normal");
         doc.setTextColor(150);
@@ -149,19 +134,16 @@ const ProjectDetail = ({ projects = [] }: any) => {
         let extraInfo = [];
         if (c.drawing_data) extraInfo.push("Contiene dibujo en imagen");
         if (c.attachment_url) extraInfo.push("Contiene archivo adjunto");
-        
         if(extraInfo.length > 0) {
             yPosition += (splitText.length * 4) + 2;
             doc.setFontSize(8);
             doc.setTextColor(100);
             doc.text(`(${extraInfo.join(", ")})`, 15, yPosition);
         }
-
         yPosition += (splitText.length * 5) + 10;
         doc.setDrawColor(240);
         doc.line(10, yPosition - 5, 200, yPosition - 5);
     });
-
     doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
   };
 
@@ -173,7 +155,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setSliderPosition((x / rect.width) * 100);
   };
 
-  // LÓGICA DE DIBUJO
   const getRelativeCoords = (e: any) => {
     if (!imageContainerRef.current) return { x: 0, y: 0 };
     const rect = imageContainerRef.current.getBoundingClientRect();
@@ -184,6 +165,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     return { x, y };
   };
 
+  // --- MODIFICADO: AUTO-FOCO AL PONER CHINCHETA ---
   const handlePointerDown = (e: any) => {
     if (isComparing) return;
     if (isDrawingMode) {
@@ -195,6 +177,8 @@ const ProjectDetail = ({ projects = [] }: any) => {
         const { x, y } = getRelativeCoords(e);
         if (x >= 0 && x <= 100 && y >= 0 && y <= 100) {
             setNewCoords({ x: x/100, y: y/100 });
+            // AQUÍ HACEMOS EL FOCO AUTOMÁTICO
+            textareaRef.current?.focus();
         }
     }
   };
@@ -213,7 +197,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
     setIsDrawing(false);
   };
 
-  // GUARDADO
   const handleAddNote = async () => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja.");
     setLoading(true);
@@ -284,13 +267,13 @@ const ProjectDetail = ({ projects = [] }: any) => {
         
         <div className="flex gap-4 items-center">
             
-            {/* BOTÓN PDF */}
+            {/* --- MODIFICADO: TEXTO DEL BOTÓN PDF --- */}
             {corrections.length > 0 && (
                 <button 
                     onClick={handleDownloadPDF}
-                    className="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2"
+                    className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"
                 >
-                    <span>📄 PDF</span>
+                    <span>📄 DESCARGAR PDF CON CORRECCIONES</span>
                 </button>
             )}
 
@@ -335,7 +318,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* ZONA CENTRAL */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {/* FLECHA IZQUIERDA (Oculta si comparamos) */}
             {!isComparing && prevProject && (
                 <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -343,7 +325,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
             )}
 
             {isComparing && compareProject ? (
-                /* MODO COMPARADOR */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
@@ -358,12 +339,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{project.version} (Actual)</div>
                 </div>
             ) : (
-                /* MODO EDICIÓN */
                 <div 
                     ref={imageContainerRef} 
                     onPointerDown={handlePointerDown} 
                     onPointerMove={handlePointerMove} 
-                    onPointerUp={handlePointerUp}
+                    onPointerUp={handlePointerUp} 
                     onPointerLeave={handlePointerUp}
                     className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`} 
                     style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
@@ -388,7 +368,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 </div>
             )}
 
-            {/* FLECHA DERECHA (Oculta si comparamos) */}
             {!isComparing && nextProject && (
                 <button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -409,7 +388,14 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     ) : null}
                   </div>
                   
-                  <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
+                  {/* --- MODIFICADO: AÑADIDO REF PARA EL AUTO-FOCO --- */}
+                  <textarea 
+                    ref={textareaRef}
+                    value={newNote} 
+                    onChange={(e) => setNewNote(e.target.value)} 
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" 
+                    placeholder="Escribe corrección..." 
+                  />
                   
                   <div className="flex flex-col gap-2">
                      <div className="flex gap-2">
