@@ -29,17 +29,43 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const prevProject = siblings[currentIndex - 1];
   const nextProject = siblings[currentIndex + 1];
 
-  // 3. LÓGICA DE VERSIONES (Para el Comparador)
-  // Buscamos páginas en la misma carpeta, con el MISMO NOMBRE, pero distinta versión
+  // 3. LÓGICA DE COMPARACIÓN MEJORADA (Por posición/índice, no por nombre)
   const historicalVersions = useMemo(() => {
     if (!project) return [];
-    return projects
-      .filter((p: any) => 
-        p.parent_id === project.parent_id && 
-        p.name === project.name && 
-        p.id !== project.id // No compararse consigo mismo
-      )
-      .sort((a: any, b: any) => b.version - a.version); // Ordenar descendente (V3, V2, V1...)
+    
+    // A. Obtenemos todos los archivos de esta carpeta
+    const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
+    
+    // B. Averiguamos qué número de página es la actual (ej: es la 2ª imagen de la V3)
+    // Ordenamos por nombre para asegurar que el orden es consistente (Pag1, Pag2, Pag3...)
+    const myVersionSiblings = folderProjects
+        .filter((p: any) => p.version === project.version)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        
+    const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
+    
+    if (myPositionIndex === -1) return [];
+
+    // C. Buscamos las versiones anteriores
+    const availableVersions = [...new Set(folderProjects.map((p: any) => p.version))]
+        .filter((v: any) => v !== project.version) // Quitamos la versión actual
+        .sort((a: any, b: any) => b - a); // Ordenamos descendente (V2, V1...)
+
+    const matches = [];
+    
+    // D. Para cada versión anterior, cogemos la imagen que esté en la MISMA POSICIÓN
+    for (const v of availableVersions) {
+        const versionSiblings = folderProjects
+            .filter((p: any) => p.version === v)
+            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+            
+        // Si esa versión tiene una página en esa posición, es la pareja correcta
+        if (versionSiblings[myPositionIndex]) {
+            matches.push(versionSiblings[myPositionIndex]);
+        }
+    }
+
+    return matches;
   }, [projects, project]);
 
   // ESTADOS VISUALES
@@ -209,7 +235,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
         
         <div className="flex gap-4 items-center">
             
-            {/* --- SELECTOR DE COMPARACIÓN MEJORADO --- */}
+            {/* --- SELECTOR DE COMPARACIÓN INTELIGENTE --- */}
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                     <button 
@@ -234,10 +260,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN VERSIONES PREVIAS</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO (POSICIÓN {currentIndex + 1})</span>
             )}
-            {/* -------------------------------------- */}
-
+            
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
                 <button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">-</button>
                 <span className="text-[10px] font-black w-12 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
@@ -261,21 +286,20 @@ const ProjectDetail = ({ projects = [] }: any) => {
             {isComparing && compareProject ? (
                 /* MODO COMPARADOR */
                 <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
-                    {/* IMAGEN NUEVA (FONDO) */}
+                    {/* IMAGEN NUEVA */}
                     <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                     
-                    {/* IMAGEN VIEJA (RECORTADA POR SLIDER) */}
+                    {/* IMAGEN VIEJA (RECORTADA) */}
                     <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
                         <div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}>
                             <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                            {/* Etiqueta flotante para saber qué estamos viendo */}
                             <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">
                                 V{compareProject.version} (Anterior)
                             </div>
                         </div>
                     </div>
                     
-                    {/* BARRA DESLIZANTE */}
+                    {/* BARRA */}
                     <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}>
                         <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200">
                             <span className="text-slate-400 text-[10px]">↔</span>
