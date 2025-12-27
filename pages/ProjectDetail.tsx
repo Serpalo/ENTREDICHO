@@ -29,42 +29,31 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const prevProject = siblings[currentIndex - 1];
   const nextProject = siblings[currentIndex + 1];
 
-  // 3. LÓGICA DE COMPARACIÓN MEJORADA (Por posición/índice, no por nombre)
+  // 3. LÓGICA DE COMPARACIÓN (Por posición)
   const historicalVersions = useMemo(() => {
     if (!project) return [];
     
-    // A. Obtenemos todos los archivos de esta carpeta
     const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
-    
-    // B. Averiguamos qué número de página es la actual (ej: es la 2ª imagen de la V3)
-    // Ordenamos por nombre para asegurar que el orden es consistente (Pag1, Pag2, Pag3...)
     const myVersionSiblings = folderProjects
         .filter((p: any) => p.version === project.version)
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
         
     const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
-    
     if (myPositionIndex === -1) return [];
 
-    // C. Buscamos las versiones anteriores
     const availableVersions = [...new Set(folderProjects.map((p: any) => p.version))]
-        .filter((v: any) => v !== project.version) // Quitamos la versión actual
-        .sort((a: any, b: any) => b - a); // Ordenamos descendente (V2, V1...)
+        .filter((v: any) => v !== project.version)
+        .sort((a: any, b: any) => b - a);
 
     const matches = [];
-    
-    // D. Para cada versión anterior, cogemos la imagen que esté en la MISMA POSICIÓN
     for (const v of availableVersions) {
         const versionSiblings = folderProjects
             .filter((p: any) => p.version === v)
             .sort((a: any, b: any) => a.name.localeCompare(b.name));
-            
-        // Si esa versión tiene una página en esa posición, es la pareja correcta
         if (versionSiblings[myPositionIndex]) {
             matches.push(versionSiblings[myPositionIndex]);
         }
     }
-
     return matches;
   }, [projects, project]);
 
@@ -78,7 +67,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
   // ESTADO PARA LA VERSIÓN SELECCIONADA A COMPARAR
   const [compareTargetId, setCompareTargetId] = useState<string>("");
 
-  // Seleccionar automáticamente la versión anterior más reciente al cargar
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
       setCompareTargetId(String(historicalVersions[0].id));
@@ -101,13 +89,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
   // CARGA DE NOTAS
   const loadCorrections = async () => {
     if (!projectId) return;
-    
     const { data, error } = await supabase
       .from('comments')
       .select('*')
       .eq('page_id', projectId) 
       .order('created_at', { ascending: false });
-      
     if (error) console.error("Error cargando notas:", error);
     setCorrections(data || []);
   };
@@ -234,8 +220,6 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
         
         <div className="flex gap-4 items-center">
-            
-            {/* --- SELECTOR DE COMPARACIÓN INTELIGENTE --- */}
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
                     <button 
@@ -260,7 +244,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO (POSICIÓN {currentIndex + 1})</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO</span>
             )}
             
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -277,7 +261,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* ZONA CENTRAL */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             
-            {prevProject && (
+            {/* === FLECHAS DE NAVEGACIÓN (Solo si NO estamos comparando) === */}
+            
+            {!isComparing && prevProject && (
                 <button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
@@ -345,7 +331,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                 </div>
             )}
 
-            {nextProject && (
+            {!isComparing && nextProject && (
                 <button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
