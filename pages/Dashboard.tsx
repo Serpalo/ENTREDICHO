@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
-import { jsPDF } from "jspdf"; // <--- Asegúrate de importar esto
+import { jsPDF } from "jspdf";
 
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
@@ -21,7 +21,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
-  // Ordenar los items por nombre para que las páginas salgan en orden (01, 02, 03...)
   const allItemsInFolder = useMemo(() => 
     projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
     .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })), 
@@ -71,7 +70,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
-  // --- FUNCIÓN PARA DESCARGAR FOLLETO COMPLETO ---
+  // --- FUNCIÓN PARA DESCARGAR FOLLETO COMPLETO (SOLO IMÁGENES) ---
   const handleDownloadBrochure = async () => {
     if (currentItems.length === 0) return alert("No hay páginas para descargar.");
     setDownloading(true);
@@ -79,7 +78,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     try {
         const doc = new jsPDF();
         
-        // Recorremos cada página
         for (let i = 0; i < currentItems.length; i++) {
             const page = currentItems[i];
             
@@ -94,24 +92,20 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 reader.readAsDataURL(blob);
             });
 
-            // 3. Obtenemos dimensiones de la imagen para ajustar el PDF
+            // 3. Obtenemos dimensiones
             const imgProps = await new Promise<{width: number, height: number}>((resolve) => {
                 const img = new Image();
                 img.src = base64;
                 img.onload = () => resolve({ width: img.width, height: img.height });
             });
 
-            // 4. Calculamos proporción para A4 (210x297mm)
+            // 4. Calculamos proporción para A4
             const pdfWidth = 210; 
             const pdfHeight = 297;
             const imgRatio = imgProps.width / imgProps.height;
 
-            // Si es la primera página, el documento ya tiene una. Si no, añadimos nueva.
             if (i > 0) doc.addPage();
 
-            // Ajustar imagen al PDF (Mantenemos márgenes mínimos)
-            // Si la imagen es más ancha que alta, podríamos rotar la página, 
-            // pero para simplificar lo encajaremos en A4 vertical.
             const margin = 10;
             const availableWidth = pdfWidth - (margin * 2);
             const availableHeight = pdfHeight - (margin * 2);
@@ -129,12 +123,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
             doc.addImage(base64, 'JPEG', x, y, finalWidth, finalHeight);
             
-            // Pie de página opcional
-            doc.setFontSize(10);
-            doc.text(`Página ${i + 1} - ${page.name}`, 10, 290);
+            // SIN TEXTO: No añadimos nada más, solo la imagen limpia.
         }
 
-        // Nombre del archivo
         const folderName = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length-1].name : "Folleto";
         doc.save(`${folderName}_v${selectedVersion}.pdf`);
 
@@ -254,7 +245,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
              </div>
              
-             {/* --- BOTÓN NUEVO: DESCARGAR FOLLETO --- */}
              {currentItems.length > 0 && (
                  <button 
                     onClick={handleDownloadBrochure} 
