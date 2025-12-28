@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { jsPDF } from "jspdf";
 
-const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
+const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
   
@@ -26,7 +26,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
-  // Modificado: Ordenar por nombre numérico para que salga PÁGINA 1, PÁGINA 2, PÁGINA 10 (no 1, 10, 2)
   const allItemsInFolder = useMemo(() => 
     projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
     .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })), 
@@ -76,60 +75,37 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
-  // --- FUNCIÓN DE SUBIDA (RENOMBRADO AUTOMÁTICO) ---
+  // --- LOGOUT ---
+  const handleLogout = async () => {
+      await supabase.auth.signOut();
+      window.location.reload();
+  };
+
+  // --- FUNCIÓN DE SUBIDA ---
   const handleConfirmUpload = async () => {
     if (!uploadFiles || uploadFiles.length === 0) return alert("Por favor, selecciona al menos un archivo.");
-    
     setIsUploading(true);
     const nextVer = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
     const ts = Date.now();
-
-    // 1. Convertimos FileList a Array y lo ordenamos alfabéticamente
-    // Esto asegura que imagen_01.jpg sea la PÁGINA 1 e imagen_02.jpg sea la PÁGINA 2
     const sortedFiles = Array.from(uploadFiles).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
     try {
         for (let i = 0; i < sortedFiles.length; i++) {
           const file = sortedFiles[i];
-          
-          // Nombre técnico para el Storage (limpio y único)
           const cleanName = `${ts}-${String(i+1).padStart(3,'0')}-${file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-          
-          // Subida al Storage
           const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
           if (uploadError) throw uploadError;
-          
           const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
-          
-          // Nombre bonito para la Base de Datos (PÁGINA X)
           const prettyName = `PÁGINA ${i + 1}`;
-
-          await supabase.from('projects').insert([{ 
-              name: prettyName, // <--- AQUÍ ESTÁ EL CAMBIO
-              parent_id: folderId ? parseInt(folderId) : null, 
-              image_url: data.publicUrl, 
-              version: nextVer, 
-              storage_name: cleanName,
-              correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null 
-          }]);
+          await supabase.from('projects').insert([{ name: prettyName, parent_id: folderId ? parseInt(folderId) : null, image_url: data.publicUrl, version: nextVer, storage_name: cleanName, correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null }]);
         }
-
         if (onRefresh) await onRefresh();
         setSelectedVersion(nextVer);
-        
-        setUploadFiles(null);
-        setUploadDeadline("");
-        setIsUploadModalOpen(false);
+        setUploadFiles(null); setUploadDeadline(""); setIsUploadModalOpen(false);
         alert(`¡Versión ${nextVer} subida con éxito!`);
-
-    } catch (error: any) {
-        alert("Error subiendo archivos: " + error.message);
-    } finally {
-        setIsUploading(false);
-    }
+    } catch (error: any) { alert("Error subiendo archivos: " + error.message); } finally { setIsUploading(false); }
   };
 
-  // DESCARGAR FOLLETO
   const handleDownloadBrochure = async () => {
     if (currentItems.length === 0) return alert("No hay páginas para descargar.");
     setDownloading(true);
@@ -154,14 +130,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     } catch (error: any) { console.error(error); alert("Error al generar el PDF: " + error.message); } finally { setDownloading(false); }
   };
 
-  // --- BORRAR TODA LA VERSIÓN ---
   const handleDeleteVersion = async () => {
       if (currentItems.length === 0) return;
-      const confirmMessage = `⚠️ ¡PELIGRO! ⚠️\n\nEstás a punto de borrar las ${currentItems.length} páginas de la VERSIÓN ${selectedVersion}.\n\nEsta acción NO se puede deshacer.\n¿Estás seguro?`;
-      if (window.confirm(confirmMessage)) {
+      if (window.confirm(`⚠️ ¡PELIGRO! ⚠️\n\nBorrar VERSIÓN ${selectedVersion}.\n¿Seguro?`)) {
           const idsToDelete = currentItems.map((p: any) => p.id);
           const { error } = await supabase.from('projects').delete().in('id', idsToDelete);
-          if (error) { alert("Error al borrar: " + error.message); } else { alert("Versión eliminada correctamente."); if (onRefresh) onRefresh(); }
+          if (error) { alert("Error al borrar: " + error.message); } else { alert("Eliminado."); if (onRefresh) onRefresh(); }
       }
   };
 
@@ -199,7 +173,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         </div>
         <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-sm p-4 border-t border-slate-100 flex justify-between items-center">
              <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase">Página {pageIndex + 1} de {currentItems.length}</span><span className="text-lg font-black italic text-slate-800 uppercase">{p.name}</span></div>
-             <div className="flex gap-3"><button onClick={() => navigate(`/project/${p.id}`)} className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black uppercase hover:scale-105 transition-transform shadow-lg shadow-rose-200">ENTRAR A CORREGIR</button></div>
+             <div className="flex gap-3">
+                 {/* SOLO EL ADMIN PUEDE BORRAR EN EL VISOR */}
+                 {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-colors">ELIMINAR PÁGINA</button>)}
+                 <button onClick={() => navigate(`/project/${p.id}`)} className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black uppercase hover:scale-105 transition-transform shadow-lg shadow-rose-200">ENTRAR A CORREGIR</button>
+             </div>
         </div>
         <button onClick={(e) => { e.stopPropagation(); nextPage(); }} disabled={pageIndex === currentItems.length - 1} className={`absolute right-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === currentItems.length - 1 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
       </div>
@@ -210,6 +188,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
         <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain" />
+        {session && (
+            <div className="flex flex-col gap-1">
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Usuario:</span>
+                <span className="text-xs font-bold text-slate-800 truncate" title={session.user.email}>{session.user.email}</span>
+                <span className={`text-[9px] font-black uppercase w-fit px-2 py-0.5 rounded ${userRole === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-500'}`}>{userRole === 'admin' ? 'ADMINISTRADOR' : 'EDITOR'}</span>
+                <button onClick={handleLogout} className="text-[10px] text-red-400 font-bold hover:text-red-600 hover:underline mt-2 text-left">Cerrar Sesión</button>
+            </div>
+        )}
         <nav className="flex flex-col gap-2">
           <div onClick={() => navigate('/')} className="flex items-center gap-3 text-slate-800 font-bold text-sm cursor-pointer p-2 hover:bg-slate-50 rounded-xl">🏠 Inicio</div>
           <div className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Estructura</div>
@@ -239,12 +225,17 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
              </div>
              {currentItems.length > 0 && (<button onClick={handleDownloadBrochure} disabled={downloading} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">{downloading ? "GENERANDO..." : "⬇ PDF COMPLETO"}</button>)}
-             <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
-             <button onClick={() => setIsUploadModalOpen(true)} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
+             
+             {/* --- BOTONES PROTEGIDOS: SOLO PARA ADMIN --- */}
+             {userRole === 'admin' && (
+                 <>
+                    <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
+                    <button onClick={() => setIsUploadModalOpen(true)} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
+                 </>
+             )}
           </div>
         </div>
 
-        {/* --- MODAL DE SUBIDA --- */}
         {isUploadModalOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-slate-100 animate-[fadeIn_0.2s_ease-out]">
@@ -272,7 +263,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             </div>
         )}
 
-        {currentFolders.length > 0 && <div className="grid grid-cols-4 gap-6 mb-10">{currentFolders.map(f => (<div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all"><button onClick={(e) => deleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">✕</button><span className="text-4xl mb-2">📁</span><span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span></div>))}</div>}
+        {currentFolders.length > 0 && <div className="grid grid-cols-4 gap-6 mb-10">{currentFolders.map(f => (<div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all">
+            {/* SOLO EL ADMIN PUEDE BORRAR CARPETAS */}
+            {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">✕</button>)}
+            <span className="text-4xl mb-2">📁</span><span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span></div>))}</div>}
 
         {currentItems.length > 0 ? (
             viewMode === 'visor' ? (renderVisor()) : viewMode === 'list' ? (
@@ -303,15 +297,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
                                ) : (
                                    <>
-                                       {pendingCount > 0 && (
-                                           <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
-                                       )}
-                                       {resolvedCount > 0 && (
-                                           <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ {resolvedCount} HECHA{resolvedCount!==1?'S':''}</div>
-                                       )}
-                                       {pendingCount === 0 && resolvedCount === 0 && (
-                                           <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
-                                       )}
+                                       {pendingCount > 0 && (<div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>)}
+                                       {resolvedCount > 0 && (<div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ {resolvedCount} HECHA{resolvedCount!==1?'S':''}</div>)}
+                                       {pendingCount === 0 && resolvedCount === 0 && (<span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>)}
                                    </>
                                )}
                             </div>
@@ -337,7 +325,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           {p.is_approved ? (<div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
-                          <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
+                          {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
+                          {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>)}
                         </div>
                         <div className="p-6 flex flex-col gap-3">
                             <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3>
@@ -351,8 +340,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
             )
         ) : null}
 
-        {/* --- NUEVO BOTÓN DE ELIMINAR TODO ABAJO --- */}
-        {currentItems.length > 0 && (
+        {/* --- NUEVO BOTÓN DE ELIMINAR TODO ABAJO (SOLO ADMIN) --- */}
+        {currentItems.length > 0 && userRole === 'admin' && (
             <div className="mt-12 flex justify-center border-t border-slate-200 pt-8 pb-20">
                 <button 
                     onClick={handleDeleteVersion} 
