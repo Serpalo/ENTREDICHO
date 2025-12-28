@@ -82,7 +82,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [compareTargetId, setCompareTargetId] = useState<string>("");
   const [comparisonMode, setComparisonMode] = useState<'split' | 'overlay'>('split');
   
-  // --- NUEVO ESTADO: OCULTAR MARCADORES ---
+  // ESTADO OCULTAR MARCADORES
   const [hideMarkers, setHideMarkers] = useState(false);
 
   useEffect(() => {
@@ -172,7 +172,13 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         
         <div className="flex gap-4 items-center">
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
-            {corrections.length > 0 && (<button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"><span>📄 PDF</span></button>)}
+            
+            {/* --- BOTÓN DE PDF ACTUALIZADO --- */}
+            {corrections.length > 0 && (
+                <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
+                    <span>📄 PDF DE CORRECCIONES</span>
+                </button>
+            )}
             
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
@@ -189,7 +195,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                 </div>
             ) : (project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>)}
             
-            {/* --- NUEVO TOGGLE DE OCULTAR MARCADORES --- */}
+            {/* TOGGLE DE OCULTAR MARCADORES */}
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl ml-2">
                 <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
                 <button 
@@ -240,7 +246,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
                   
-                  {/* --- RENDERIZADO CONDICIONAL DE MARCADORES --- */}
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -253,9 +258,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                             {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
                             {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
-                        
                         {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
-                        
                         {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
                       </>
                   )}
