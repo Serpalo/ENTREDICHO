@@ -82,8 +82,10 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [compareTargetId, setCompareTargetId] = useState<string>("");
   const [comparisonMode, setComparisonMode] = useState<'split' | 'overlay'>('split');
   
-  // ESTADO OCULTAR MARCADORES
+  // ESTADOS NUEVOS (MARCADORES Y LUPA)
   const [hideMarkers, setHideMarkers] = useState(false);
+  const [isMagnifierActive, setIsMagnifierActive] = useState(false);
+  const [magnifierState, setMagnifierState] = useState({ x: 0, y: 0, show: false });
 
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
@@ -144,13 +146,37 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   };
 
   const handlePointerDown = (e: any) => {
-    if (isComparing || isLocked) return;
+    // Si la lupa está activa, no permitimos dibujar ni poner puntos
+    if (isComparing || isLocked || isMagnifierActive) return;
+    
     if (isDrawingMode) { setIsDrawing(true); const { x, y } = getRelativeCoords(e); setCurrentPath(`M ${x} ${y}`); e.preventDefault(); } 
     else { const { x, y } = getRelativeCoords(e); if (x >= 0 && x <= 100 && y >= 0 && y <= 100) { setNewCoords({ x: x/100, y: y/100 }); setTimeout(() => textareaRef.current?.focus(), 50); } }
   };
 
-  const handlePointerMove = (e: any) => { if (!isDrawing || !isDrawingMode) return; e.preventDefault(); const { x, y } = getRelativeCoords(e); setCurrentPath(prev => `${prev} L ${x} ${y}`); };
+  const handlePointerMove = (e: any) => { 
+      // 1. LÓGICA DE LUPA
+      if (isMagnifierActive && imageContainerRef.current) {
+          const rect = imageContainerRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          
+          // Solo actualizamos si el ratón está dentro
+          if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) {
+              setMagnifierState({ x, y, show: true });
+          } else {
+              setMagnifierState(prev => ({ ...prev, show: false }));
+          }
+      }
+
+      // 2. LÓGICA DE DIBUJO
+      if (!isDrawing || !isDrawingMode) return; 
+      e.preventDefault(); 
+      const { x, y } = getRelativeCoords(e); 
+      setCurrentPath(prev => `${prev} L ${x} ${y}`); 
+  };
+
   const handlePointerUp = () => { if (isDrawing && isDrawingMode && currentPath) { setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]); setCurrentPath(""); } setIsDrawing(false); };
+  const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); };
 
   const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; const { error: insertError } = await supabase.from('comments').insert([{ page_id: projectId, content: newNote, attachment_url: fileUrl, resolved: false, is_general: isGeneral, x: newCoords?.x || null, y: newCoords?.y || null, drawing_data: drawingDataString, drawing_tool: usedTool, }]); if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
@@ -166,26 +192,13 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       {/* HEADER */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
-          
-          {/* --- BOTÓN VOLVER CORREGIDO: NAVEGACIÓN DIRECTA AL PADRE --- */}
-          <button 
-            onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} 
-            className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors"
-          >
-            ← VOLVER
-          </button>
-
+          <button onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors">← VOLVER</button>
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md">{project.name}</h2>
         </div>
         
         <div className="flex gap-4 items-center">
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
-            
-            {corrections.length > 0 && (
-                <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
-                    <span>📄 PDF DE CORRECCIONES</span>
-                </button>
-            )}
+            {corrections.length > 0 && (<button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"><span>📄 PDF DE CORRECCIONES</span></button>)}
             
             {historicalVersions.length > 0 ? (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
@@ -202,11 +215,22 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                 </div>
             ) : (project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>)}
             
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl ml-2">
-                <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
-                <button onClick={() => setHideMarkers(!hideMarkers)} className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`} title="Ocultar/Mostrar marcadores">
-                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} />
+            <div className="flex items-center gap-2">
+                {/* --- BOTÓN DE LUPA --- */}
+                <button 
+                    onClick={() => { setIsMagnifierActive(!isMagnifierActive); setHideMarkers(false); }} 
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase transition-all ${isMagnifierActive ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                >
+                    <span>🔍</span> {isMagnifierActive ? "Lupa Activa" : "Lupa"}
                 </button>
+
+                {/* BOTÓN DE OCULTAR MARCAS */}
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
+                    <button onClick={() => setHideMarkers(!hideMarkers)} className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`} title="Ocultar/Mostrar marcadores">
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                </div>
             </div>
 
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -243,10 +267,35 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     </div>
                 )
             ) : (
-                <div ref={imageContainerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isLocked && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}>
+                <div ref={imageContainerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerLeave} className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isLocked && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : (isMagnifierActive ? 'cursor-none' : 'cursor-default')}`} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}>
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
+                  
+                  {/* --- RENDERIZADO DE LA LUPA --- */}
+                  {isMagnifierActive && magnifierState.show && imageContainerRef.current && (
+                      <div 
+                        style={{
+                            position: 'absolute',
+                            left: magnifierState.x - 75, // Centrado (mitad de 150)
+                            top: magnifierState.y - 75,
+                            width: '150px',
+                            height: '150px',
+                            borderRadius: '50%',
+                            border: '4px solid white',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                            pointerEvents: 'none',
+                            backgroundImage: `url(${project.image_url})`,
+                            backgroundRepeat: 'no-repeat',
+                            // La magia: el fondo debe ser proporcional al tamaño REAL mostrado, multiplicado por el zoom de la lupa (2.5)
+                            backgroundSize: `${imageContainerRef.current.clientWidth * 2.5}px ${imageContainerRef.current.clientHeight * 2.5}px`,
+                            backgroundPosition: `-${(magnifierState.x * 2.5) - 75}px -${(magnifierState.y * 2.5) - 75}px`,
+                            zIndex: 100,
+                            backgroundColor: 'white'
+                        }}
+                      />
+                  )}
+
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
