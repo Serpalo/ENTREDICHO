@@ -166,14 +166,21 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       {/* HEADER */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
-          <button onClick={() => navigate(-1)} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200">← VOLVER</button>
+          
+          {/* --- BOTÓN VOLVER CORREGIDO: NAVEGACIÓN DIRECTA AL PADRE --- */}
+          <button 
+            onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} 
+            className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors"
+          >
+            ← VOLVER
+          </button>
+
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md">{project.name}</h2>
         </div>
         
         <div className="flex gap-4 items-center">
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
             
-            {/* --- BOTÓN DE PDF ACTUALIZADO --- */}
             {corrections.length > 0 && (
                 <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
                     <span>📄 PDF DE CORRECCIONES</span>
@@ -195,14 +202,9 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                 </div>
             ) : (project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>)}
             
-            {/* TOGGLE DE OCULTAR MARCADORES */}
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl ml-2">
                 <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
-                <button 
-                    onClick={() => setHideMarkers(!hideMarkers)} 
-                    className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`}
-                    title="Ocultar/Mostrar marcadores"
-                >
+                <button onClick={() => setHideMarkers(!hideMarkers)} className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`} title="Ocultar/Mostrar marcadores">
                     <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} />
                 </button>
             </div>
@@ -245,7 +247,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
-                  
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
