@@ -73,15 +73,17 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     return matches;
   }, [projects, project]);
 
-  // ESTADOS VISUALES Y COMPARACIÓN
+  // ESTADOS VISUALES
   const [newCoords, setNewCoords] = useState<{x: number, y: number} | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isComparing, setIsComparing] = useState(false);
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareTargetId, setCompareTargetId] = useState<string>("");
-  // NUEVO ESTADO: MODO DE COMPARACIÓN
   const [comparisonMode, setComparisonMode] = useState<'split' | 'overlay'>('split');
+  
+  // --- NUEVO ESTADO: OCULTAR MARCADORES ---
+  const [hideMarkers, setHideMarkers] = useState(false);
 
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
@@ -101,7 +103,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS Y REALTIME ---
+  // --- CARGA DE DATOS ---
   const loadCorrections = async () => {
     if (!projectId) return;
     const { data, error } = await supabase.from('comments').select('*').eq('page_id', projectId).order('created_at', { ascending: true });
@@ -121,12 +123,10 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       const newState = !isPageApproved; setIsPageApproved(newState); const { error } = await supabase.from('projects').update({ is_approved: newState }).eq('id', projectId); if (error) { alert("Error al actualizar estado"); setIsPageApproved(!newState); } if (onRefresh) onRefresh();
   };
 
-  // PDF GENERATION
   const handleDownloadPDF = () => {
     const doc = new jsPDF(); const title = project ? `Correcciones: ${project.name}` : "Correcciones"; doc.setFontSize(16); doc.setTextColor(225, 29, 72); doc.text(title, 10, 15); if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); } else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); } doc.setFontSize(10); doc.setTextColor(100); doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22); doc.setLineWidth(0.5); doc.line(10, 25, 200, 25); let yPosition = 35; corrections.forEach((c, index) => { if (yPosition > 270) { doc.addPage(); yPosition = 20; } let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 10; doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); }); doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
   };
 
-  // INTERACCIÓN CON LA IMAGEN (SLIDER Y DIBUJO)
   const handleSliderMove = (e: any) => {
     if (!imageContainerRef.current) return;
     const rect = imageContainerRef.current.getBoundingClientRect();
@@ -180,7 +180,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     {isComparing && (
                         <>
                         <select value={compareTargetId} onChange={(e) => setCompareTargetId(e.target.value)} className="bg-white border border-slate-200 text-slate-700 text-[10px] font-bold py-1.5 px-2 rounded-lg focus:outline-none focus:border-rose-500 uppercase cursor-pointer">{historicalVersions.map((v: any) => (<option key={v.id} value={v.id}>V{v.version}</option>))}</select>
-                        {/* NUEVOS TOGGLES DE MODO DE COMPARACIÓN */}
                         <div className="flex bg-slate-200 p-0.5 rounded-lg">
                             <button onClick={() => setComparisonMode('split')} title="Modo Cortinilla" className={`p-1.5 rounded-md transition-all ${comparisonMode === 'split' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12h20M12 2v20"/></svg></button>
                             <button onClick={() => setComparisonMode('overlay')} title="Modo Transparencia (Piel de cebolla)" className={`p-1.5 rounded-md transition-all ${comparisonMode === 'overlay' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/><circle cx="12" cy="12" r="3"/></svg></button>
@@ -190,6 +189,18 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                 </div>
             ) : (project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>)}
             
+            {/* --- NUEVO TOGGLE DE OCULTAR MARCADORES --- */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl ml-2">
+                <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
+                <button 
+                    onClick={() => setHideMarkers(!hideMarkers)} 
+                    className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`}
+                    title="Ocultar/Mostrar marcadores"
+                >
+                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+            </div>
+
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
                 <button onClick={() => setZoomLevel(Math.max(1, zoomLevel - 0.5))} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">-</button>
                 <span className="text-[10px] font-black w-12 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
@@ -206,7 +217,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
             
             {isComparing && compareProject ? (
                 comparisonMode === 'split' ? (
-                    // --- MODO CORTINILLA (EXISTENTE) ---
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                         <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
                         <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
@@ -216,36 +226,39 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                         <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{project.version} (Actual)</div>
                     </div>
                 ) : (
-                    // --- NUEVO MODO TRANSPARENCIA (PIEL DE CEBOLLA) ---
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-ew-resize group overflow-hidden" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
-                         {/* Fondo: Versión anterior */}
                          <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                         {/* Frente: Versión actual con opacidad variable */}
                          <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none transition-opacity duration-75" style={{ opacity: sliderPosition / 100 }} />
                          <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none">Fondo: V{compareProject.version}</div>
                          <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none" style={{ opacity: Math.max(0.3, sliderPosition / 100) }}>Capa superior: V{project.version} ({Math.round(sliderPosition)}%)</div>
-                         {/* Guía visual inferior */}
                          <div className="absolute bottom-0 left-0 h-1 bg-rose-600/50 z-30 pointer-events-none" style={{ width: `${sliderPosition}%` }}></div>
                     </div>
                 )
             ) : (
-                // MODO NORMAL DE EDICIÓN
                 <div ref={imageContainerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isLocked && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}>
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      {corrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
-                              const isHovered = hoveredId === c.id; const isHighlighter = c.drawing_tool === 'highlighter';
-                              let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
-                              const strokeWidth = isHighlighter ? (isHovered ? "4" : "2") : (isHovered ? "1.5" : "0.5"); const opacity = isHighlighter ? (isHovered ? "0.8" : "0.5") : "1";
-                              return (<path key={`${c.id}-${i}`} d={path} stroke={strokeColor} strokeWidth={strokeWidth} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
-                          })))}
-                      {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
-                      {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
-                  </svg>
-                  {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-600 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
-                  {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
+                  
+                  {/* --- RENDERIZADO CONDICIONAL DE MARCADORES --- */}
+                  {!hideMarkers && (
+                      <>
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            {corrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
+                                    const isHovered = hoveredId === c.id; const isHighlighter = c.drawing_tool === 'highlighter';
+                                    let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
+                                    const strokeWidth = isHighlighter ? (isHovered ? "4" : "2") : (isHovered ? "1.5" : "0.5"); const opacity = isHighlighter ? (isHovered ? "0.8" : "0.5") : "1";
+                                    return (<path key={`${c.id}-${i}`} d={path} stroke={strokeColor} strokeWidth={strokeWidth} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
+                                })))}
+                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
+                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+                        </svg>
+                        
+                        {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
+                        
+                        {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
+                      </>
+                  )}
                 </div>
             )}
             {!isComparing && nextProject && (<button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>)}
