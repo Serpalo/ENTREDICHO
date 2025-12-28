@@ -6,7 +6,8 @@ import { jsPDF } from "jspdf";
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
-  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
@@ -18,7 +19,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<FileList | null>(null);
   const [uploadDeadline, setUploadDeadline] = useState("");
-  const [isUploading, setIsUploading] = useState(false); // Para mostrar "Subiendo..."
+  const [isUploading, setIsUploading] = useState(false); 
 
   // Estado para descarga
   const [downloading, setDownloading] = useState(false);
@@ -75,7 +76,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
-  // --- FUNCIÓN DE SUBIDA (Ahora desde el modal) ---
+  // --- FUNCIÓN DE SUBIDA ---
   const handleConfirmUpload = async () => {
     if (!uploadFiles || uploadFiles.length === 0) return alert("Por favor, selecciona al menos un archivo.");
     
@@ -106,7 +107,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         if (onRefresh) await onRefresh();
         setSelectedVersion(nextVer);
         
-        // Resetear y cerrar modal
         setUploadFiles(null);
         setUploadDeadline("");
         setIsUploadModalOpen(false);
@@ -261,7 +261,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              
-             {/* BOTÓN QUE ABRE EL MODAL */}
              <button 
                 onClick={() => setIsUploadModalOpen(true)} 
                 className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all"
@@ -271,7 +270,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
           </div>
         </div>
 
-        {/* --- VENTANA MODAL DE SUBIDA --- */}
+        {/* --- MODAL DE SUBIDA --- */}
         {isUploadModalOpen && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-slate-100 animate-[fadeIn_0.2s_ease-out]">
@@ -281,7 +280,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     </div>
                     
                     <div className="flex flex-col gap-6">
-                        {/* 1. Selección de archivos */}
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">1. Selecciona las imágenes</label>
                             <input 
@@ -294,7 +292,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                             {uploadFiles && <p className="mt-2 text-xs font-bold text-emerald-600">✅ {uploadFiles.length} archivos seleccionados</p>}
                         </div>
 
-                        {/* 2. Fecha límite */}
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">2. ¿Fecha límite para correcciones? (Opcional)</label>
                             <input 
@@ -306,7 +303,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                             <p className="mt-1 text-[9px] text-slate-400">Si dejas esto vacío, no habrá fecha límite.</p>
                         </div>
 
-                        {/* Botones de acción */}
                         <div className="flex gap-3 mt-4 pt-4 border-t border-slate-100">
                             <button 
                                 onClick={() => setIsUploadModalOpen(false)} 
@@ -338,8 +334,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                   <thead>
                     <tr className="border-b border-slate-50 text-[10px] font-black text-slate-400 uppercase bg-slate-50/50">
                       <th className="px-8 py-6 w-32">Vista</th>
-                      <th className="px-4 py-6 w-5/12">Página</th>
-                      <th className="pl-12 py-6 w-3/12">Correcciones</th>
+                      <th className="px-4 py-6 w-4/12">Página</th>
+                      <th className="pl-12 py-6 w-2/12">Correcciones</th>
+                      {/* --- NUEVA COLUMNA --- */}
+                      <th className="px-4 py-6 w-2/12">Fecha Límite</th>
                       <th className="px-8 py-6 text-right w-40">Acción</th>
                     </tr>
                   </thead>
@@ -358,7 +356,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                {p.is_approved ? (
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
                                ) : isDeadlinePassed ? (
-                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-4 py-1.5 rounded-full shadow-md">⏳ PLAZO CERRADO</div>
+                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-4 py-1.5 rounded-full shadow-md">⏳ CERRADO</div>
                                ) : pendingCount > 0 ? (
                                  <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                                ) : myComments.length > 0 ? (
@@ -368,6 +366,19 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                )}
                             </div>
                           </td>
+                          
+                          {/* --- NUEVA CELDA DE FECHA --- */}
+                          <td className="px-4 py-6 align-top">
+                              {p.correction_deadline ? (
+                                  <div className={`flex flex-col ${isDeadlinePassed ? 'text-orange-500' : 'text-slate-600'}`}>
+                                      <span className="text-xs font-bold">{new Date(p.correction_deadline).toLocaleDateString()}</span>
+                                      <span className="text-[10px] font-medium opacity-60">{new Date(p.correction_deadline).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                  </div>
+                              ) : (
+                                  <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin límite</span>
+                              )}
+                          </td>
+
                           <td className="px-8 py-6 text-right align-top"><button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button><button onClick={(e) => deleteProject(e, p.id)} className="text-slate-300 hover:text-rose-600 text-[10px] font-bold uppercase">Eliminar</button></td>
                         </tr>
                       );
@@ -396,7 +407,17 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                           )}
                           <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
                         </div>
-                        <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
+                        <div className="p-6 flex flex-col gap-3">
+                            <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3>
+                            {/* Fecha en Grid View (Opcional) */}
+                            {p.correction_deadline && (
+                                <div className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+                                    <span>📅 Límite:</span>
+                                    <span className={isDeadlinePassed ? "text-orange-500" : ""}>{new Date(p.correction_deadline).toLocaleDateString()}</span>
+                                </div>
+                            )}
+                            <button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button>
+                        </div>
                       </div>
                     )
                  })}
