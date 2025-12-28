@@ -16,6 +16,8 @@ const COLORS = [
     { name: 'Rosa', hex: '#db2777' }
 ];
 
+declare const emailjs: any; // Declaración para TypeScript
+
 // RECIBIMOS userRole Y session DEL PADRE (APP.TSX)
 const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => {
   const navigate = useNavigate();
@@ -120,12 +122,16 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   // --- CARGA DE DATOS ---
   const loadCorrections = async () => {
     if (!projectId) return;
+    // CARGAMOS TODOS LOS COMENTARIOS (INCLUIDOS LOS BORRADOS PARA FILTRARLOS LUEGO)
     const { data, error } = await supabase.from('comments').select('*').eq('page_id', projectId).order('created_at', { ascending: true });
-    if (error) console.error("Error cargando notas:", error); setCorrections(data || []);
+    if (error) console.error("Error cargando notas:", error); 
+    setCorrections(data || []);
   };
+
   const loadProjectStatus = async () => {
       if (!projectId) return; const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single(); if (data) setIsPageApproved(data.is_approved);
   }
+
   useEffect(() => { 
       loadCorrections(); loadProjectStatus();
       const commentsChannel = supabase.channel('custom-all-channel').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadCorrections()).subscribe();
@@ -141,7 +147,12 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   };
 
   const handleDownloadPDF = () => {
-    const doc = new jsPDF(); const title = project ? `Correcciones: ${project.name}` : "Correcciones"; doc.setFontSize(16); doc.setTextColor(225, 29, 72); doc.text(title, 10, 15); if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); } else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); } doc.setFontSize(10); doc.setTextColor(100); doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22); doc.setLineWidth(0.5); doc.line(10, 25, 200, 25); let yPosition = 35; corrections.forEach((c, index) => { if (yPosition > 270) { doc.addPage(); yPosition = 20; } let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 10; doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); }); doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
+    // FILTRAMOS LOS BORRADOS PARA EL PDF (NO DEBEN SALIR)
+    const activeCorrections = corrections.filter(c => !c.deleted_at);
+
+    const doc = new jsPDF(); const title = project ? `Correcciones: ${project.name}` : "Correcciones"; doc.setFontSize(16); doc.setTextColor(225, 29, 72); doc.text(title, 10, 15); if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); } else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); } doc.setFontSize(10); doc.setTextColor(100); doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22); doc.setLineWidth(0.5); doc.line(10, 25, 200, 25); let yPosition = 35; 
+    
+    activeCorrections.forEach((c, index) => { if (yPosition > 270) { doc.addPage(); yPosition = 20; } let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 10; doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); }); doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
   };
 
   const handleSliderMove = (e: any) => {
@@ -235,7 +246,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         drawing_data: drawingDataString, 
         drawing_tool: usedTool,
         color: activeColor,
-        user_email: session?.user?.email || 'Anónimo' // <--- NUEVO
+        user_email: session?.user?.email || 'Anónimo'
     }]); 
     if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
@@ -245,10 +256,29 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
   };
 
+  // --- BORRADO SUAVE (SOFT DELETE) ---
   const deleteComment = async (id: string) => { 
-      if (window.confirm("¿Borrar nota?")) { 
-          setCorrections(prev => prev.filter(c => c.id !== id));
-          await supabase.from('comments').delete().eq('id', id); 
+      if (window.confirm("¿Seguro que quieres borrar esta nota?")) { 
+          // 1. Ocultar visualmente de inmediato para que parezca borrado
+          // Pero si es admin, luego al refrescarse lo verá "borrado"
+          const currentUser = session?.user?.email || "usuario_desconocido";
+          const timestamp = new Date().toISOString();
+
+          // 2. Actualizamos la BBDD marcándolo como borrado
+          const { error } = await supabase
+            .from('comments')
+            .update({ 
+                deleted_at: timestamp, 
+                deleted_by: currentUser 
+            })
+            .eq('id', id);
+          
+          if (error) {
+              alert("Error al borrar: " + error.message);
+          } else {
+              // Recargar correcciones para actualizar la vista
+              loadCorrections();
+          }
       } 
   };
   
@@ -265,6 +295,14 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       }
       return { color: finalColor, width: strokeWidth, opacity }; 
   };
+
+  // --- FILTRADO DE COMENTARIOS A MOSTRAR ---
+  // Si eres admin: Ves TODO (activos + borrados)
+  // Si eres usuario: Ves SOLO los activos (deleted_at == null)
+  const visibleCorrections = corrections.filter(c => {
+      if (userRole === 'admin') return true; // El admin lo ve todo
+      return !c.deleted_at; // El usuario solo ve lo no borrado
+  });
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
 
@@ -328,11 +366,11 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                     </div>
                 ) : (
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-ew-resize group overflow-hidden" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
-                         <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                         <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none transition-opacity duration-75" style={{ opacity: sliderPosition / 100 }} />
-                         <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none">Fondo: V{compareProject.version}</div>
-                         <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none" style={{ opacity: Math.max(0.3, sliderPosition / 100) }}>Capa superior: V{project.version} ({Math.round(sliderPosition)}%)</div>
-                         <div className="absolute bottom-0 left-0 h-1 bg-rose-600/50 z-30 pointer-events-none" style={{ width: `${sliderPosition}%` }}></div>
+                          <img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
+                          <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none transition-opacity duration-75" style={{ opacity: sliderPosition / 100 }} />
+                          <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none">Fondo: V{compareProject.version}</div>
+                          <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none" style={{ opacity: Math.max(0.3, sliderPosition / 100) }}>Capa superior: V{project.version} ({Math.round(sliderPosition)}%)</div>
+                          <div className="absolute bottom-0 left-0 h-1 bg-rose-600/50 z-30 pointer-events-none" style={{ width: `${sliderPosition}%` }}></div>
                     </div>
                 )
             ) : (
@@ -344,7 +382,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            {corrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
+                            {visibleCorrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
                                     const isHovered = hoveredId === c.id; 
                                     const tool = c.drawing_tool || 'pen';
                                     const color = c.color || '#ef4444'; // Usamos el color guardado SOLO para el dibujo
@@ -356,7 +394,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                         </svg>
                         
                         {/* PUNTO DE COORDENADAS */}
-                        {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
+                        {visibleCorrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
                         
                         {newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
                       </>
@@ -419,47 +457,58 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
               )}
               
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
-                {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
-                {corrections.map((c, i) => (
+                {visibleCorrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones visibles</div>}
+                
+                {visibleCorrections.map((c, i) => (
                   <div 
                     key={c.id} 
-                    onMouseEnter={() => setHoveredId(c.id)} 
+                    onMouseEnter={() => !c.deleted_at && setHoveredId(c.id)} 
                     onMouseLeave={() => setHoveredId(null)} 
                     className={`p-4 rounded-2xl border-2 transition-all 
-                        ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} 
-                        ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}
+                        ${c.deleted_at ? 'bg-slate-50 border-slate-200 opacity-70 grayscale' : (c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200'))} 
+                        ${hoveredId===c.id && !c.deleted_at ? 'scale-[1.02] shadow-md':''}`}
                   >
                     <div className="flex gap-3 items-start">
-                      <button 
-                        onClick={() => toggleCheck(c.id, c.resolved)} 
-                        className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                            ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
-                      >
-                          {c.resolved && "✓"}
-                      </button>
+                      {!c.deleted_at && (
+                          <button 
+                            onClick={() => toggleCheck(c.id, c.resolved)} 
+                            className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
+                                ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
+                          >
+                              {c.resolved && "✓"}
+                          </button>
+                      )}
+                      {c.deleted_at && <span className="text-xl">🗑️</span>}
                       
                       <div className="flex-1">
                         <div className="flex justify-between">
-                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-purple-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
+                            <span className={`text-[9px] font-black uppercase ${c.deleted_at ? 'text-slate-400 line-through' : (c.is_general ? 'text-blue-400' : 'text-purple-300')}`}>#{i+1} {c.is_general && "GENERAL"}</span>
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         
-                        {/* --- AQUI MOSTRAMOS EL EMAIL DEL USUARIO --- */}
+                        {/* EMAIL DEL USUARIO */}
                         <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">
                             👤 {c.user_email || 'Anónimo'}
                         </span>
 
-                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900")}`}>
+                        <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>
                             {c.content}
                         </p>
+                        
+                        {/* AVISO DE BORRADO (SOLO ADMIN LO VE) */}
+                        {c.deleted_at && (
+                            <div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">
+                                ❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>
+                                📅 {new Date(c.deleted_at).toLocaleString()}
+                            </div>
+                        )}
                         
                         <div className="flex flex-wrap gap-2 mt-2 items-center">
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
 
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           {/* SOLO EL ADMIN O EL DUEÑO DEL COMENTARIO PUEDEN BORRAR (OPCIONAL, AQUI LO DEJO ABIERTO PERO PROTEGIDO POR UI) */}
-                           {!isLocked && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
+                           {!isLocked && !c.deleted_at && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
                         </div>
                       </div>
                     </div>
