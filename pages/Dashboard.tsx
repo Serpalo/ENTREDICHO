@@ -214,7 +214,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                             {idx < breadcrumbs.length - 1 && <span className="text-slate-300">/</span>}
                         </React.Fragment>
                     ))
-                ) : "MIS PROYECTOS"}
+                ) : "CAMPAÑAS"} 
             </h1>
             <div className="flex gap-2 mt-2">{availableVersions.map(v => (<button key={v} onClick={() => setSelectedVersion(v)} className={`px-4 py-1 rounded-full text-[10px] font-black uppercase transition-all ${selectedVersion===v?'bg-rose-600 text-white shadow-md scale-105':'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>V{v}</button>))}</div>
           </div>
@@ -316,26 +316,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-8">
-                 {currentItems.map((p: any) => {
-                     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
-                     const pendingCount = myComments.filter(c => !c.resolved).length;
-                     const resolvedCount = myComments.filter(c => c.resolved).length;
-                     const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
-                     return (
-                      <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
-                        <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                          {p.is_approved ? (<div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
-                          {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
-                          {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>)}
-                        </div>
-                        <div className="p-6 flex flex-col gap-3">
-                            <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3>
-                            {p.correction_deadline && (<div className="text-[9px] font-bold text-slate-400 flex items-center gap-1"><span>📅 Límite:</span><span className={isDeadlinePassed ? "text-orange-500" : ""}>{new Date(p.correction_deadline).toLocaleDateString()}</span></div>)}
-                            <button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button>
-                        </div>
-                      </div>
-                    )
-                 })}
+                  {currentItems.map((p: any) => {
+                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                      const pendingCount = myComments.filter(c => !c.resolved).length;
+                      const resolvedCount = myComments.filter(c => c.resolved).length;
+                      const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
+                      return (
+                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
+                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                           {p.is_approved ? (<div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
+                           {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
+                           {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>)}
+                         </div>
+                         <div className="p-6 flex flex-col gap-3">
+                             <h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3>
+                             {p.correction_deadline && (<div className="text-[9px] font-bold text-slate-400 flex items-center gap-1"><span>📅 Límite:</span><span className={isDeadlinePassed ? "text-orange-500" : ""}>{new Date(p.correction_deadline).toLocaleDateString()}</span></div>)}
+                             <button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button>
+                         </div>
+                       </div>
+                      )
+                   })}
               </div>
             )
         ) : null}
