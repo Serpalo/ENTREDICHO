@@ -7,6 +7,7 @@ import { jsPDF } from "jspdf";
 type DrawingTool = 'pen' | 'highlighter' | 'arrow' | 'rect';
 
 const COLORS = [
+    { name: 'Amarillo', hex: '#eab308' }, // <--- AÑADIDO AMARILLO
     { name: 'Rojo', hex: '#ef4444' },
     { name: 'Azul', hex: '#2563eb' },
     { name: 'Verde', hex: '#16a34a' },
@@ -107,7 +108,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   // ESTADOS DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen'); 
-  const [activeColor, setActiveColor] = useState('#ef4444'); // Rojo por defecto para el dibujo
+  const [activeColor, setActiveColor] = useState('#ef4444'); // Color activo
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
@@ -338,7 +339,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                             {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false).width} opacity={getStrokeStyle(activeTool, activeColor, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
                         
-                        {/* PUNTO DE COORDENADAS (Se mantiene rojo a menos que cambiemos lógica, pero generalmente es mejor dejarlo unificado o usar el color del marker) */}
+                        {/* PUNTO DE COORDENADAS */}
                         {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
                         
                         {newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
@@ -391,7 +392,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                         <div className="flex gap-2 mt-1">
                             <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                             <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}><span>📎</span>{selectedFile ? "LISTO" : "ADJUNTAR"}</label>
-                            {/* El botón de guardar SÍ puede ser del color elegido para dar feedback visual de qué color estás usando */}
                             <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`} style={{ backgroundColor: loading ? undefined : activeColor }}>{loading ? "..." : "GUARDAR"}</button>
                         </div>
                         <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">MODIFICACIÓN GENERAL</button>
@@ -408,7 +408,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     key={c.id} 
                     onMouseEnter={() => setHoveredId(c.id)} 
                     onMouseLeave={() => setHoveredId(null)} 
-                    /* --- AQUÍ HEMOS RESTAURADO LA LÓGICA DE COLORES SEMÁNTICOS --- */
+                    /* --- AQUÍ HEMOS RESTAURADO LA LÓGICA DE COLORES SEMÁNTICOS (ROJO/VERDE/AZUL) --- */
                     className={`p-4 rounded-2xl border-2 transition-all 
                         ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} 
                         ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}
