@@ -26,12 +26,14 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     projects.find((p: any) => String(p.id) === String(projectId)), 
   [projects, projectId]);
 
-  // Sincronizar estado de aprobación cuando carga el proyecto
-  useEffect(() => {
-      if (project) {
-          setIsPageApproved(project.is_approved || false);
-      }
+  // --- NUEVO: COMPROBAR FECHA LÍMITE ---
+  const isDeadlinePassed = useMemo(() => {
+      if (!project?.correction_deadline) return false;
+      return new Date() > new Date(project.correction_deadline);
   }, [project]);
+
+  // --- BLOQUEO GENERAL (Si está aprobada O si ha pasado la fecha) ---
+  const isLocked = isPageApproved || isDeadlinePassed;
 
   // 2. NAVEGACIÓN HERMANOS
   const siblings = useMemo(() => {
@@ -97,7 +99,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // CARGA DE NOTAS
+  // --- CARGA DE DATOS ---
   const loadCorrections = async () => {
     if (!projectId) return;
     const { data, error } = await supabase
@@ -109,25 +111,41 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     setCorrections(data || []);
   };
 
-  useEffect(() => { loadCorrections(); }, [projectId]);
+  const loadProjectStatus = async () => {
+      if (!projectId) return;
+      const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single();
+      if (data) setIsPageApproved(data.is_approved);
+  }
+
+  // --- SUSCRIPCIONES REALTIME (MULTIJUGADOR) ---
+  useEffect(() => { 
+      loadCorrections(); 
+      loadProjectStatus();
+
+      const commentsChannel = supabase
+        .channel('custom-all-channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadCorrections())
+        .subscribe();
+
+      const projectChannel = supabase
+        .channel('project-status-channel')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => {
+                if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); }
+            }
+        )
+        .subscribe();
+
+      return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(projectChannel); }
+  }, [projectId]);
+
 
   // FUNCIÓN PARA APROBAR/DESAPROBAR PÁGINA
   const togglePageApproval = async () => {
       const newState = !isPageApproved;
-      setIsPageApproved(newState); // Actualizamos visualmente rápido
-      
-      const { error } = await supabase
-        .from('projects')
-        .update({ is_approved: newState })
-        .eq('id', projectId);
-
-      if (error) {
-          alert("Error al actualizar estado");
-          setIsPageApproved(!newState); // Revertir si falla
-      } else {
-          // Si tienes una función para refrescar la lista global de proyectos, llámala aquí
-          if (onRefresh) onRefresh(); 
-      }
+      setIsPageApproved(newState); 
+      const { error } = await supabase.from('projects').update({ is_approved: newState }).eq('id', projectId);
+      if (error) { alert("Error al actualizar estado"); setIsPageApproved(!newState); }
+      if (onRefresh) onRefresh();
   };
 
   // PDF
@@ -139,11 +157,8 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     doc.setTextColor(225, 29, 72);
     doc.text(title, 10, 15);
     
-    // Indicador de estado en el PDF
-    if (isPageApproved) {
-        doc.setTextColor(22, 163, 74); // Verde
-        doc.text("[PÁGINA APROBADA]", 140, 15);
-    }
+    if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); }
+    else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); }
 
     doc.setFontSize(10);
     doc.setTextColor(100);
@@ -157,16 +172,9 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         if (yPosition > 270) { doc.addPage(); yPosition = 20; }
         
         let statusText = "[PENDIENTE]";
-        if (c.resolved) {
-            doc.setTextColor(22, 163, 74);
-            statusText = "[HECHO]";
-        } else if (c.is_general) {
-            doc.setTextColor(37, 99, 235);
-            statusText = "[GENERAL]";
-        } else {
-            doc.setTextColor(225, 29, 72);
-            statusText = "[PENDIENTE]";
-        }
+        if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } 
+        else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } 
+        else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; }
 
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
@@ -217,8 +225,8 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   };
 
   const handlePointerDown = (e: any) => {
-    // SI ESTÁ APROBADA, NO HACEMOS NADA
-    if (isComparing || isPageApproved) return;
+    // BLOQUEADO SI ESTÁ APROBADA O PLAZO VENCIDO
+    if (isComparing || isLocked) return;
 
     if (isDrawingMode) {
         setIsDrawing(true);
@@ -286,7 +294,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         setNewCoords(null);
         setTempDrawings([]); 
         setCurrentPath("");
-        loadCorrections(); 
       }
     } catch (err: any) {
       alert("Error: " + err.message);
@@ -296,19 +303,15 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   };
 
   const toggleCheck = async (id: string, currentResolved: boolean) => {
-    setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
     await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id);
-    loadCorrections();
   };
 
   const deleteComment = async (id: string) => {
     if (window.confirm("¿Borrar nota?")) {
       await supabase.from('comments').delete().eq('id', id);
-      loadCorrections();
     }
   };
 
-  // Helper para estilos estáticos
   const getStrokeStyle = (tool: DrawingTool) => {
       const isHighlighter = tool === 'highlighter';
       return {
@@ -331,18 +334,8 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         
         <div className="flex gap-4 items-center">
             
-            {/* --- BOTÓN NUEVO: APROBAR PÁGINA --- */}
-            <button 
-                onClick={togglePageApproval}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`}
-                title={isPageApproved ? "Click para reabrir (desaprobar)" : "Click para finalizar y bloquear"}
-            >
-                {isPageApproved ? (
-                    <span className="group-hover:hidden">✅ PÁGINA APROBADA</span>
-                ) : (
-                    "👍 APROBAR PÁGINA"
-                )}
-            </button>
+            {/* --- BOTÓN APROBAR (Deshabilitado si el plazo ha pasado para evitar confusión, o puedes dejarlo para forzar reapertura) --- */}
+            <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
 
             {corrections.length > 0 && (
                 <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
@@ -362,7 +355,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>
             )}
             
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -406,53 +399,32 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     onPointerMove={handlePointerMove} 
                     onPointerUp={handlePointerUp} 
                     onPointerLeave={handlePointerUp}
-                    // SI ESTÁ APROBADA, cursor normal (no deja dibujar)
-                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isPageApproved && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
+                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isLocked && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
                     style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
                 >
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
-                  {/* CAPA DE BLOQUEO VISUAL SI ESTÁ APROBADA (OPCIONAL) */}
                   {isPageApproved && (
-                      <div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">
-                          🔒 FINALIZADA
-                      </div>
+                      <div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>
+                  )}
+                  
+                  {/* --- MENSAJE DE PLAZO CERRADO --- */}
+                  {isDeadlinePassed && !isPageApproved && (
+                      <div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>
                   )}
 
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      {/* --- LÓGICA DE DIBUJO --- */}
                       {corrections.map(c => !c.resolved && c.drawing_data && (
                           c.drawing_data.split('|').map((path: string, i: number) => {
                               const isHovered = hoveredId === c.id;
                               const isHighlighter = c.drawing_tool === 'highlighter';
-                              
                               let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; 
                               if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
-                              
-                              const strokeWidth = isHighlighter 
-                                  ? (isHovered ? "4" : "2") 
-                                  : (isHovered ? "1.5" : "0.5");
-                                  
-                              const opacity = isHighlighter 
-                                  ? (isHovered ? "0.8" : "0.5") 
-                                  : "1";
-
-                              return (
-                                  <path 
-                                      key={`${c.id}-${i}`} 
-                                      d={path} 
-                                      stroke={strokeColor} 
-                                      strokeWidth={strokeWidth} 
-                                      opacity={opacity} 
-                                      fill="none" 
-                                      strokeLinecap="round" 
-                                      strokeLinejoin="round" 
-                                      className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} 
-                                  />
-                              );
+                              const strokeWidth = isHighlighter ? (isHovered ? "4" : "2") : (isHovered ? "1.5" : "0.5");
+                              const opacity = isHighlighter ? (isHovered ? "0.8" : "0.5") : "1";
+                              return (<path key={`${c.id}-${i}`} d={path} stroke={strokeColor} strokeWidth={strokeWidth} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                           })
                       ))}
-                      
                       {tempDrawings.map((item, i) => {
                           const style = getStrokeStyle(item.tool);
                           return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -462,7 +434,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                       )}
                   </svg>
 
-                  {/* CHINCHETAS */}
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
                     <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-600 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
@@ -482,12 +453,18 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
               
-              {/* --- ZONA DE EDICIÓN: SE OCULTA SI ESTÁ APROBADA --- */}
-              {isPageApproved ? (
-                  <div className="p-8 bg-emerald-50 border-b border-emerald-100 text-center flex flex-col items-center gap-2">
-                      <span className="text-4xl">🎉</span>
-                      <h3 className="text-emerald-800 font-black uppercase text-lg">Página Aprobada</h3>
-                      <p className="text-emerald-600 text-xs px-4">Esta página está finalizada. Para añadir más correcciones, debes volver a abrirla pulsando el botón superior.</p>
+              {/* --- ZONA DE EDICIÓN: SE OCULTA SI ESTÁ APROBADA O PLAZO VENCIDO --- */}
+              {isLocked ? (
+                  <div className={`p-8 border-b text-center flex flex-col items-center gap-2 ${isPageApproved ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
+                      <span className="text-4xl">{isPageApproved ? "🎉" : "⏳"}</span>
+                      <h3 className={`font-black uppercase text-lg ${isPageApproved ? 'text-emerald-800' : 'text-orange-800'}`}>
+                          {isPageApproved ? "Página Aprobada" : "Plazo Finalizado"}
+                      </h3>
+                      <p className={`text-xs px-4 ${isPageApproved ? 'text-emerald-600' : 'text-orange-600'}`}>
+                          {isPageApproved 
+                            ? "Esta página está finalizada. Para añadir más correcciones, debes volver a abrirla pulsando el botón superior."
+                            : "El plazo para realizar correcciones en esta versión ha terminado."}
+                      </p>
                   </div>
               ) : (
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
@@ -553,7 +530,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                       
                       <div className="flex-1">
                         <div className="flex justify-between">
-                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-rose-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
+                            <span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-purple-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span>
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         
@@ -565,9 +542,9 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
 
-                        {/* Solo permitir borrar si NO está aprobada la página (Opcional, si quieres que se pueda borrar siempre, quita la condición isPageApproved) */}
+                        {/* Solo permitir borrar si NO está bloqueada */}
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           {!isPageApproved && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
+                           {!isLocked && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
                         </div>
                       </div>
                     </div>
