@@ -6,8 +6,7 @@ import { jsPDF } from "jspdf";
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
@@ -27,6 +26,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
   
+  // Modificado: Ordenar por nombre numérico para que salga PÁGINA 1, PÁGINA 2, PÁGINA 10 (no 1, 10, 2)
   const allItemsInFolder = useMemo(() => 
     projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
     .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })), 
@@ -76,26 +76,57 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
-  // --- FUNCIÓN DE SUBIDA ---
+  // --- FUNCIÓN DE SUBIDA (RENOMBRADO AUTOMÁTICO) ---
   const handleConfirmUpload = async () => {
     if (!uploadFiles || uploadFiles.length === 0) return alert("Por favor, selecciona al menos un archivo.");
+    
     setIsUploading(true);
     const nextVer = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
     const ts = Date.now();
+
+    // 1. Convertimos FileList a Array y lo ordenamos alfabéticamente
+    // Esto asegura que imagen_01.jpg sea la PÁGINA 1 e imagen_02.jpg sea la PÁGINA 2
+    const sortedFiles = Array.from(uploadFiles).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
     try {
-        for (let i = 0; i < uploadFiles.length; i++) {
-          const file = uploadFiles[i];
+        for (let i = 0; i < sortedFiles.length; i++) {
+          const file = sortedFiles[i];
+          
+          // Nombre técnico para el Storage (limpio y único)
           const cleanName = `${ts}-${String(i+1).padStart(3,'0')}-${file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+          
+          // Subida al Storage
           const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
           if (uploadError) throw uploadError;
+          
           const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
-          await supabase.from('projects').insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null, image_url: data.publicUrl, version: nextVer, storage_name: cleanName, correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null }]);
+          
+          // Nombre bonito para la Base de Datos (PÁGINA X)
+          const prettyName = `PÁGINA ${i + 1}`;
+
+          await supabase.from('projects').insert([{ 
+              name: prettyName, // <--- AQUÍ ESTÁ EL CAMBIO
+              parent_id: folderId ? parseInt(folderId) : null, 
+              image_url: data.publicUrl, 
+              version: nextVer, 
+              storage_name: cleanName,
+              correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null 
+          }]);
         }
+
         if (onRefresh) await onRefresh();
         setSelectedVersion(nextVer);
-        setUploadFiles(null); setUploadDeadline(""); setIsUploadModalOpen(false);
+        
+        setUploadFiles(null);
+        setUploadDeadline("");
+        setIsUploadModalOpen(false);
         alert(`¡Versión ${nextVer} subida con éxito!`);
-    } catch (error: any) { alert("Error subiendo archivos: " + error.message); } finally { setIsUploading(false); }
+
+    } catch (error: any) {
+        alert("Error subiendo archivos: " + error.message);
+    } finally {
+        setIsUploading(false);
+    }
   };
 
   // DESCARGAR FOLLETO
@@ -123,6 +154,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     } catch (error: any) { console.error(error); alert("Error al generar el PDF: " + error.message); } finally { setDownloading(false); }
   };
 
+  // --- BORRAR TODA LA VERSIÓN ---
   const handleDeleteVersion = async () => {
       if (currentItems.length === 0) return;
       const confirmMessage = `⚠️ ¡PELIGRO! ⚠️\n\nEstás a punto de borrar las ${currentItems.length} páginas de la VERSIÓN ${selectedVersion}.\n\nEsta acción NO se puede deshacer.\n¿Estás seguro?`;
@@ -271,15 +303,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
                                ) : (
                                    <>
-                                       {/* PENDIENTES */}
                                        {pendingCount > 0 && (
                                            <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                                        )}
-                                       {/* HECHAS */}
                                        {resolvedCount > 0 && (
                                            <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ {resolvedCount} HECHA{resolvedCount!==1?'S':''}</div>
                                        )}
-                                       {/* SIN CORRECCIONES */}
                                        {pendingCount === 0 && resolvedCount === 0 && (
                                            <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
                                        )}
