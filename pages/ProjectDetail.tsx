@@ -7,7 +7,7 @@ import { jsPDF } from "jspdf";
 type DrawingTool = 'pen' | 'highlighter' | 'arrow' | 'rect';
 
 const COLORS = [
-    { name: 'Amarillo Flúor', hex: '#ccff00' }, // <--- CAMBIADO A FLÚOR
+    { name: 'Amarillo Flúor', hex: '#ccff00' },
     { name: 'Rojo', hex: '#ef4444' },
     { name: 'Azul', hex: '#2563eb' },
     { name: 'Verde', hex: '#16a34a' },
@@ -108,7 +108,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   // ESTADOS DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen'); 
-  const [activeColor, setActiveColor] = useState('#ef4444'); // Color activo
+  const [activeColor, setActiveColor] = useState('#ef4444'); 
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
@@ -233,8 +233,24 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     }]); 
     if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
-  const toggleCheck = async (id: string, currentResolved: boolean) => { await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); };
-  const deleteComment = async (id: string) => { if (window.confirm("¿Borrar nota?")) { await supabase.from('comments').delete().eq('id', id); } };
+
+  // --- LÓGICA OPTIMISTA PARA EL CHECK ---
+  const toggleCheck = async (id: string, currentResolved: boolean) => { 
+      // 1. Actualizamos visualmente al instante
+      setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
+      // 2. Enviamos a base de datos
+      await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
+  };
+
+  // --- LÓGICA OPTIMISTA PARA BORRAR ---
+  const deleteComment = async (id: string) => { 
+      if (window.confirm("¿Borrar nota?")) { 
+          // 1. Lo borramos de la lista visualmente YA
+          setCorrections(prev => prev.filter(c => c.id !== id));
+          // 2. Le decimos a Supabase que lo borre de verdad
+          await supabase.from('comments').delete().eq('id', id); 
+      } 
+  };
   
   const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean) => { 
       const isHighlighter = tool === 'highlighter'; 
@@ -409,7 +425,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                     key={c.id} 
                     onMouseEnter={() => setHoveredId(c.id)} 
                     onMouseLeave={() => setHoveredId(null)} 
-                    /* --- AQUÍ HEMOS RESTAURADO LA LÓGICA DE COLORES SEMÁNTICOS --- */
                     className={`p-4 rounded-2xl border-2 transition-all 
                         ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} 
                         ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}
