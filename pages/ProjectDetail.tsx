@@ -6,7 +6,7 @@ import { jsPDF } from "jspdf";
 // Tipo para definir las herramientas disponibles
 type DrawingTool = 'pen' | 'highlighter';
 
-const ProjectDetail = ({ projects = [] }: any) => {
+const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { projectId } = useParams();
   
@@ -16,12 +16,22 @@ const ProjectDetail = ({ projects = [] }: any) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
+  // ESTADO DE APROBACIÓN LOCAL
+  const [isPageApproved, setIsPageApproved] = useState(false);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // 1. IDENTIFICAR PROYECTO ACTUAL
   const project = useMemo(() => 
     projects.find((p: any) => String(p.id) === String(projectId)), 
   [projects, projectId]);
+
+  // Sincronizar estado de aprobación cuando carga el proyecto
+  useEffect(() => {
+      if (project) {
+          setIsPageApproved(project.is_approved || false);
+      }
+  }, [project]);
 
   // 2. NAVEGACIÓN HERMANOS
   const siblings = useMemo(() => {
@@ -101,6 +111,25 @@ const ProjectDetail = ({ projects = [] }: any) => {
 
   useEffect(() => { loadCorrections(); }, [projectId]);
 
+  // FUNCIÓN PARA APROBAR/DESAPROBAR PÁGINA
+  const togglePageApproval = async () => {
+      const newState = !isPageApproved;
+      setIsPageApproved(newState); // Actualizamos visualmente rápido
+      
+      const { error } = await supabase
+        .from('projects')
+        .update({ is_approved: newState })
+        .eq('id', projectId);
+
+      if (error) {
+          alert("Error al actualizar estado");
+          setIsPageApproved(!newState); // Revertir si falla
+      } else {
+          // Si tienes una función para refrescar la lista global de proyectos, llámala aquí
+          if (onRefresh) onRefresh(); 
+      }
+  };
+
   // PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
@@ -109,6 +138,13 @@ const ProjectDetail = ({ projects = [] }: any) => {
     doc.setFontSize(16);
     doc.setTextColor(225, 29, 72);
     doc.text(title, 10, 15);
+    
+    // Indicador de estado en el PDF
+    if (isPageApproved) {
+        doc.setTextColor(22, 163, 74); // Verde
+        doc.text("[PÁGINA APROBADA]", 140, 15);
+    }
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22);
@@ -181,7 +217,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
   };
 
   const handlePointerDown = (e: any) => {
-    if (isComparing) return;
+    // SI ESTÁ APROBADA, NO HACEMOS NADA
+    if (isComparing || isPageApproved) return;
+
     if (isDrawingMode) {
         setIsDrawing(true);
         const { x, y } = getRelativeCoords(e);
@@ -270,6 +308,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
     }
   };
 
+  // Helper para estilos estáticos
   const getStrokeStyle = (tool: DrawingTool) => {
       const isHighlighter = tool === 'highlighter';
       return {
@@ -291,9 +330,23 @@ const ProjectDetail = ({ projects = [] }: any) => {
         </div>
         
         <div className="flex gap-4 items-center">
+            
+            {/* --- BOTÓN NUEVO: APROBAR PÁGINA --- */}
+            <button 
+                onClick={togglePageApproval}
+                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`}
+                title={isPageApproved ? "Click para reabrir (desaprobar)" : "Click para finalizar y bloquear"}
+            >
+                {isPageApproved ? (
+                    <span className="group-hover:hidden">✅ PÁGINA APROBADA</span>
+                ) : (
+                    "👍 APROBAR PÁGINA"
+                )}
+            </button>
+
             {corrections.length > 0 && (
                 <button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm">
-                    <span>📄 DESCARGAR PDF CON CORRECCIONES</span>
+                    <span>📄 PDF</span>
                 </button>
             )}
 
@@ -309,7 +362,7 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     )}
                 </div>
             ) : (
-                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>
+                project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO</span>
             )}
             
             <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
@@ -353,13 +406,21 @@ const ProjectDetail = ({ projects = [] }: any) => {
                     onPointerMove={handlePointerMove} 
                     onPointerUp={handlePointerUp} 
                     onPointerLeave={handlePointerUp}
-                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
+                    // SI ESTÁ APROBADA, cursor normal (no deja dibujar)
+                    className={`relative shadow-2xl bg-white group transition-transform duration-200 ease-out touch-none ${!isPageApproved && isDrawingMode ? (activeTool==='highlighter' ? 'cursor-text' : 'cursor-crosshair') : 'cursor-default'}`} 
                     style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto' }}
                 >
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   
+                  {/* CAPA DE BLOQUEO VISUAL SI ESTÁ APROBADA (OPCIONAL) */}
+                  {isPageApproved && (
+                      <div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">
+                          🔒 FINALIZADA
+                      </div>
+                  )}
+
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      {/* --- LÓGICA DE DIBUJO CON EFECTO HOVER --- */}
+                      {/* --- LÓGICA DE DIBUJO --- */}
                       {corrections.map(c => !c.resolved && c.drawing_data && (
                           c.drawing_data.split('|').map((path: string, i: number) => {
                               const isHovered = hoveredId === c.id;
@@ -401,12 +462,11 @@ const ProjectDetail = ({ projects = [] }: any) => {
                       )}
                   </svg>
 
-                  {/* CHINCHETA: Morada en el mapa, pero la tarjeta será Roja si no es general */}
+                  {/* CHINCHETAS */}
                   {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (
                     <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-600 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>
                   ))}
                   
-                  {/* CHINCHETA NUEVA: Morada */}
                   {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
                 </div>
             )}
@@ -421,74 +481,55 @@ const ProjectDetail = ({ projects = [] }: any) => {
         {/* SIDEBAR DERECHA */}
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
-                    {isDrawingMode ? (
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : 'text-rose-600 bg-rose-50'}`}>
-                            {activeTool === 'highlighter' ? '🖍️ Subrayando...' : '✏️ Dibujando...'}
-                        </span>
-                    ) : newCoords ? (
-                        <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
-                    ) : null}
+              
+              {/* --- ZONA DE EDICIÓN: SE OCULTA SI ESTÁ APROBADA --- */}
+              {isPageApproved ? (
+                  <div className="p-8 bg-emerald-50 border-b border-emerald-100 text-center flex flex-col items-center gap-2">
+                      <span className="text-4xl">🎉</span>
+                      <h3 className="text-emerald-800 font-black uppercase text-lg">Página Aprobada</h3>
+                      <p className="text-emerald-600 text-xs px-4">Esta página está finalizada. Para añadir más correcciones, debes volver a abrirla pulsando el botón superior.</p>
                   </div>
-                  
-                  <textarea 
-                    ref={textareaRef}
-                    value={newNote} 
-                    onChange={(e) => setNewNote(e.target.value)} 
-                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" 
-                    placeholder="Escribe corrección..." 
-                  />
-                  
-                  <div className="flex flex-col gap-2">
-                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-                         <button 
-                            onClick={() => { 
-                                setIsDrawingMode(true); 
-                                setActiveTool('pen'); 
-                                setNewCoords(null); 
-                            }}
-                            className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-rose-600 border-rose-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`}
-                            title="Bolígrafo (línea fina)"
-                         >
-                            ✏️ Boli
-                         </button>
-                         <button 
-                            onClick={() => { 
-                                setIsDrawingMode(true); 
-                                setActiveTool('highlighter'); 
-                                setNewCoords(null); 
-                            }}
-                            className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`}
-                            title="Subrayador (línea gruesa transparente)"
-                         >
-                            🖍️ Subrayador
-                         </button>
-                         {isDrawingMode && (
-                             <button onClick={() => setIsDrawingMode(false)} className="px-2 text-slate-400 hover:text-slate-600" title="Cancelar dibujo">✕</button>
-                         )}
-                     </div>
+              ) : (
+                  <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
+                        {isDrawingMode ? (
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : 'text-rose-600 bg-rose-50'}`}>
+                                {activeTool === 'highlighter' ? '🖍️ Subrayando...' : '✏️ Dibujando...'}
+                            </span>
+                        ) : newCoords ? (
+                            <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>
+                        ) : null}
+                      </div>
+                      
+                      <textarea 
+                        ref={textareaRef}
+                        value={newNote} 
+                        onChange={(e) => setNewNote(e.target.value)} 
+                        className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" 
+                        placeholder="Escribe corrección..." 
+                      />
+                      
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-rose-600 border-rose-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo (línea fina)">✏️ Boli</button>
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('highlighter'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Subrayador (línea gruesa transparente)">🖍️ Subrayador</button>
+                            {isDrawingMode && (<button onClick={() => setIsDrawingMode(false)} className="px-2 text-slate-400 hover:text-slate-600" title="Cancelar dibujo">✕</button>)}
+                        </div>
 
-                     <div className="flex gap-2 mt-1">
-                         <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
-                         <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}>
-                             <span>📎</span>
-                             {selectedFile ? "LISTO" : "ADJUNTAR"}
-                         </label>
-                         <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>
-                             {loading ? "..." : "GUARDAR"}
-                         </button>
-                     </div>
-                     
-                     <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">
-                         MODIFICACIÓN GENERAL
-                     </button>
+                        <div className="flex gap-2 mt-1">
+                            <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                            <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}><span>📎</span>{selectedFile ? "LISTO" : "ADJUNTAR"}</label>
+                            <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>{loading ? "..." : "GUARDAR"}</button>
+                        </div>
+                        
+                        <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">MODIFICACIÓN GENERAL</button>
 
-                     {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
-                     {tempDrawings.length > 0 && <button onClick={() => setTempDrawings([])} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold text-right underline">Borrar dibujo actual</button>}
+                        {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
+                        {tempDrawings.length > 0 && <button onClick={() => setTempDrawings([])} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold text-right underline">Borrar dibujo actual</button>}
+                      </div>
                   </div>
-              </div>
+              )}
               
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
@@ -524,8 +565,9 @@ const ProjectDetail = ({ projects = [] }: any) => {
                           {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                         </div>
 
+                        {/* Solo permitir borrar si NO está aprobada la página (Opcional, si quieres que se pueda borrar siempre, quita la condición isPageApproved) */}
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>
+                           {!isPageApproved && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
                         </div>
                       </div>
                     </div>
