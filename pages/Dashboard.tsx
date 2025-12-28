@@ -336,7 +336,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                       <th className="px-8 py-6 w-32">Vista</th>
                       <th className="px-4 py-6 w-4/12">Página</th>
                       <th className="pl-12 py-6 w-2/12">Correcciones</th>
-                      {/* --- NUEVA COLUMNA --- */}
                       <th className="px-4 py-6 w-2/12">Fecha Límite</th>
                       <th className="px-8 py-6 text-right w-40">Acción</th>
                     </tr>
@@ -351,27 +350,29 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                         <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
                           <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
                           <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
+                          
+                          {/* --- COLUMNA 3: CORRECCIONES (Vuelve a ser solo contadores) --- */}
                           <td className="pl-12 py-6 align-top">
                             <div className="flex flex-col gap-2">
                                {p.is_approved ? (
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
-                               ) : isDeadlinePassed ? (
-                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-4 py-1.5 rounded-full shadow-md">⏳ CERRADO</div>
                                ) : pendingCount > 0 ? (
                                  <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                                ) : myComments.length > 0 ? (
-                                 <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
+                                 <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ HECHO</div>
                                ) : (
                                  <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
                                )}
                             </div>
                           </td>
                           
-                          {/* --- NUEVA CELDA DE FECHA --- */}
+                          {/* --- COLUMNA 4: FECHA (Aquí mostramos el aviso de CERRADO) --- */}
                           <td className="px-4 py-6 align-top">
-                              {p.correction_deadline ? (
-                                  <div className={`flex flex-col ${isDeadlinePassed ? 'text-orange-500' : 'text-slate-600'}`}>
-                                      <span className="text-xs font-bold">{new Date(p.correction_deadline).toLocaleDateString()}</span>
+                              {isDeadlinePassed ? (
+                                  <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-3 py-1.5 rounded-full shadow-md border-2 border-orange-400">🔒 CORRECCIONES CERRADAS</div>
+                              ) : p.correction_deadline ? (
+                                  <div className="flex flex-col text-slate-600">
+                                      <span className="text-xs font-bold text-orange-600">{new Date(p.correction_deadline).toLocaleDateString()}</span>
                                       <span className="text-[10px] font-medium opacity-60">{new Date(p.correction_deadline).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                   </div>
                               ) : (
