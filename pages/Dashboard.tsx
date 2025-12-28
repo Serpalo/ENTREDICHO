@@ -123,24 +123,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     } catch (error: any) { console.error(error); alert("Error al generar el PDF: " + error.message); } finally { setDownloading(false); }
   };
 
-  // --- NUEVA FUNCIÓN: BORRAR TODA LA VERSIÓN ---
   const handleDeleteVersion = async () => {
       if (currentItems.length === 0) return;
-      
       const confirmMessage = `⚠️ ¡PELIGRO! ⚠️\n\nEstás a punto de borrar las ${currentItems.length} páginas de la VERSIÓN ${selectedVersion}.\n\nEsta acción NO se puede deshacer.\n¿Estás seguro?`;
-      
       if (window.confirm(confirmMessage)) {
-          // Obtenemos todos los IDs de la versión actual en pantalla
           const idsToDelete = currentItems.map((p: any) => p.id);
-          
           const { error } = await supabase.from('projects').delete().in('id', idsToDelete);
-          
-          if (error) {
-              alert("Error al borrar: " + error.message);
-          } else {
-              alert("Versión eliminada correctamente.");
-              if (onRefresh) onRefresh();
-          }
+          if (error) { alert("Error al borrar: " + error.message); } else { alert("Versión eliminada correctamente."); if (onRefresh) onRefresh(); }
       }
   };
 
@@ -270,6 +259,7 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     {currentItems.map((p: any) => {
                       const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                       const pendingCount = myComments.filter(c => !c.resolved).length;
+                      const resolvedCount = myComments.filter(c => c.resolved).length;
                       const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
                       return (
                         <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
@@ -277,12 +267,28 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                           <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
                           <td className="pl-12 py-6 align-top">
                             <div className="flex flex-col gap-2">
-                               {p.is_approved ? (<div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>) : pendingCount > 0 ? (<div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>) : myComments.length > 0 ? (<div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>) : (<span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>)}
+                               {p.is_approved ? (
+                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
+                               ) : (
+                                   <>
+                                       {/* PENDIENTES */}
+                                       {pendingCount > 0 && (
+                                           <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
+                                       )}
+                                       {/* HECHAS */}
+                                       {resolvedCount > 0 && (
+                                           <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ {resolvedCount} HECHA{resolvedCount!==1?'S':''}</div>
+                                       )}
+                                       {/* SIN CORRECCIONES */}
+                                       {pendingCount === 0 && resolvedCount === 0 && (
+                                           <span className="text-[10px] font-bold text-slate-300 uppercase italic py-1.5">Sin correcciones</span>
+                                       )}
+                                   </>
+                               )}
                             </div>
                           </td>
                           <td className="px-4 py-6 align-top">{isDeadlinePassed ? (<div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-3 py-1.5 rounded-full shadow-md border-2 border-orange-400">🔒 CORRECCIONES CERRADAS</div>) : p.correction_deadline ? (<div className="flex flex-col text-slate-600"><span className="text-xs font-bold text-orange-600">{new Date(p.correction_deadline).toLocaleDateString()}</span><span className="text-[10px] font-medium opacity-60">{new Date(p.correction_deadline).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>) : (<span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin límite</span>)}</td>
                           <td className="px-8 py-6 text-right align-top">
-                              {/* --- AQUÍ HE QUITADO EL BOTÓN DE ELIMINAR --- */}
                               <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button>
                           </td>
                         </tr>
@@ -296,12 +302,12 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                  {currentItems.map((p: any) => {
                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                      const pendingCount = myComments.filter(c => !c.resolved).length;
+                     const resolvedCount = myComments.filter(c => c.resolved).length;
                      const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
                      return (
                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           {p.is_approved ? (<div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
-                          {/* En grid view dejamos el eliminar pero solo visible en hover, o lo quitamos si quieres */}
                           <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
                         </div>
                         <div className="p-6 flex flex-col gap-3">
