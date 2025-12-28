@@ -3,8 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { jsPDF } from "jspdf";
 
-// Tipo para definir las herramientas disponibles
-type DrawingTool = 'pen' | 'highlighter' | 'arrow';
+// AÑADIMOS 'rect' (Rectángulo) A LOS TIPOS
+type DrawingTool = 'pen' | 'highlighter' | 'arrow' | 'rect';
+
+const COLORS = [
+    { name: 'Rojo', hex: '#ef4444' },
+    { name: 'Azul', hex: '#2563eb' },
+    { name: 'Verde', hex: '#16a34a' },
+    { name: 'Naranja', hex: '#f97316' },
+    { name: 'Negro', hex: '#000000' },
+    { name: 'Rosa', hex: '#db2777' }
+];
 
 const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const navigate = useNavigate();
@@ -98,10 +107,12 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   // ESTADOS DIBUJO
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [activeTool, setActiveTool] = useState<DrawingTool>('pen'); 
+  const [activeColor, setActiveColor] = useState('#ef4444'); // Color por defecto (Rojo)
+  
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
-  const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
-  const [arrowStart, setArrowStart] = useState<{x: number, y: number} | null>(null);
+  const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool, color: string}[]>([]);
+  const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // --- CARGA DE DATOS ---
@@ -144,6 +155,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     const x = ((clientX - rect.left) / rect.width) * 100; const y = ((clientY - rect.top) / rect.height) * 100; return { x, y };
   };
 
+  // --- MATEMÁTICAS PARA FORMAS ---
   const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => {
       let path = `M ${x1} ${y1} L ${x2} ${y2}`;
       const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -156,14 +168,22 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       return path;
   };
 
+  const generateRectPath = (x1: number, y1: number, x2: number, y2: number) => {
+      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`;
+  };
+
   const handlePointerDown = (e: any) => {
     if (isComparing || isLocked || isMagnifierActive) return;
     
     if (isDrawingMode) { 
         setIsDrawing(true); 
         const { x, y } = getRelativeCoords(e);
-        if (activeTool === 'arrow') { setArrowStart({ x, y }); setCurrentPath(`M ${x} ${y} L ${x} ${y}`); } 
-        else { setCurrentPath(`M ${x} ${y}`); }
+        setStartPoint({ x, y });
+        
+        if (activeTool === 'arrow') setCurrentPath(`M ${x} ${y} L ${x} ${y}`); 
+        else if (activeTool === 'rect') setCurrentPath(generateRectPath(x, y, x, y));
+        else setCurrentPath(`M ${x} ${y}`); 
+        
         e.preventDefault(); 
     } 
     else { const { x, y } = getRelativeCoords(e); if (x >= 0 && x <= 100 && y >= 0 && y <= 100) { setNewCoords({ x: x/100, y: y/100 }); setTimeout(() => textareaRef.current?.focus(), 50); } }
@@ -179,27 +199,57 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       if (!isDrawing || !isDrawingMode) return; 
       e.preventDefault(); 
       const { x, y } = getRelativeCoords(e); 
-      if (activeTool === 'arrow' && arrowStart) { const arrowPath = generateArrowPath(arrowStart.x, arrowStart.y, x, y); setCurrentPath(arrowPath); } 
-      else { setCurrentPath(prev => `${prev} L ${x} ${y}`); }
+      
+      if (startPoint) {
+          if (activeTool === 'arrow') setCurrentPath(generateArrowPath(startPoint.x, startPoint.y, x, y));
+          else if (activeTool === 'rect') setCurrentPath(generateRectPath(startPoint.x, startPoint.y, x, y));
+          else setCurrentPath(prev => `${prev} L ${x} ${y}`);
+      }
   };
 
   const handlePointerUp = () => { 
-      if (isDrawing && isDrawingMode && currentPath) { setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]); setCurrentPath(""); } 
-      setIsDrawing(false); setArrowStart(null);
+      if (isDrawing && isDrawingMode && currentPath) { 
+          setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool, color: activeColor }]); 
+          setCurrentPath(""); 
+      } 
+      setIsDrawing(false); setStartPoint(null);
   };
-  const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); setArrowStart(null); };
+  const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); setStartPoint(null); };
 
   const handleAddNote = async (isGeneral = false) => {
-    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; const { error: insertError } = await supabase.from('comments').insert([{ page_id: projectId, content: newNote, attachment_url: fileUrl, resolved: false, is_general: isGeneral, x: newCoords?.x || null, y: newCoords?.y || null, drawing_data: drawingDataString, drawing_tool: usedTool, }]); if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
+    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
+    
+    // GUARDAMOS EL COLOR EN LA BASE DE DATOS
+    const { error: insertError } = await supabase.from('comments').insert([{ 
+        page_id: projectId, 
+        content: newNote, 
+        attachment_url: fileUrl, 
+        resolved: false, 
+        is_general: isGeneral, 
+        x: newCoords?.x || null, 
+        y: newCoords?.y || null, 
+        drawing_data: drawingDataString, 
+        drawing_tool: usedTool,
+        color: activeColor // <--- NUEVO CAMPO
+    }]); 
+    if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
   const toggleCheck = async (id: string, currentResolved: boolean) => { await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); };
   const deleteComment = async (id: string) => { if (window.confirm("¿Borrar nota?")) { await supabase.from('comments').delete().eq('id', id); } };
   
-  const getStrokeStyle = (tool: DrawingTool) => { 
+  const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean) => { 
       const isHighlighter = tool === 'highlighter'; 
-      const isArrow = tool === 'arrow';
-      if (isArrow) return { color: "#2563eb", width: "2", opacity: "1" }; // AZUL ELÉCTRICO POR DEFECTO
-      return { color: isHighlighter ? "#fde047" : "#f43f5e", width: isHighlighter ? "2" : "0.5", opacity: isHighlighter ? "0.5" : "1" }; 
+      let strokeWidth = isHighlighter ? "2" : "1";
+      let opacity = isHighlighter ? "0.5" : "1";
+      let finalColor = color;
+
+      if (isHighlighter && isHovered) { strokeWidth = "4"; opacity = "0.8"; }
+      if ((tool === 'pen' || tool === 'arrow' || tool === 'rect') && isHovered) { 
+          strokeWidth = "3"; 
+          // Al hacer hover, aclaramos un poco el color para que brille
+          opacity = "0.8";
+      }
+      return { color: finalColor, width: strokeWidth, opacity }; 
   };
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
@@ -283,30 +333,15 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                             {corrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
                                     const isHovered = hoveredId === c.id; 
                                     const tool = c.drawing_tool || 'pen';
-                                    const style = getStrokeStyle(tool as DrawingTool);
-                                    let color = style.color;
-                                    let width = style.width;
-                                    let opacity = style.opacity;
-                                    
-                                    if (tool === 'highlighter' && isHovered) { width = "4"; opacity = "0.8"; }
-                                    if (tool === 'pen' && isHovered) { width = "1.5"; }
-                                    
-                                    // --- LÓGICA DE HOVER PARA FLECHA (Hacerla brillar y engordar) ---
-                                    if (tool === 'arrow' && isHovered) { 
-                                        width = "3"; 
-                                        color = "#60a5fa"; // Un azul más claro/brillante (blue-400)
-                                        opacity = "1";
-                                    }
-
-                                    if (c.is_general && tool !== 'highlighter' && tool !== 'arrow') color = "#2563eb"; 
-
-                                    return (<path key={`${c.id}-${i}`} d={path} stroke={color} strokeWidth={width} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
+                                    const color = c.color || '#ef4444'; // Si no tiene color, usa rojo por defecto
+                                    const style = getStrokeStyle(tool as DrawingTool, color, isHovered);
+                                    return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                                 })))}
-                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
-                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
+                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false).width} opacity={getStrokeStyle(activeTool, activeColor, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
-                        {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? (c.is_general ? "bg-blue-600 scale-150 z-30" : "bg-purple-600 scale-150 z-30") : (c.is_general ? "bg-blue-500 hover:scale-125" : "bg-purple-500 hover:scale-125")}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
-                        {newCoords && <div className="absolute w-8 h-8 bg-purple-600/80 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`}}></div>}
+                        {corrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
+                        {newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
                       </>
                   )}
                 </div>
@@ -326,23 +361,38 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
-                        {isDrawingMode ? (<span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : (activeTool === 'arrow' ? 'text-blue-600 bg-blue-100' : 'text-rose-600 bg-rose-50')}`}>{activeTool === 'highlighter' ? '🖍️ Subrayando...' : (activeTool === 'arrow' ? '↗ Dibujando flecha...' : '✏️ Dibujando...')}</span>) : newCoords ? (<span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>) : null}
+                        {isDrawingMode ? (<span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse bg-white border shadow-sm`} style={{ color: activeColor }}>{activeTool === 'highlighter' ? '🖍️ Subrayando...' : (activeTool === 'arrow' ? '↗ Dibujando flecha...' : (activeTool === 'rect' ? '⬜ Dibujando marco...' : '✏️ Dibujando...'))}</span>) : newCoords ? (<span className="text-[9px] font-bold text-white px-2 py-0.5 rounded animate-bounce" style={{ backgroundColor: activeColor }}>🎯 Punto marcado</span>) : null}
                       </div>
                       <textarea ref={textareaRef} value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
+                      
                       <div className="flex flex-col gap-2">
-                        <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-rose-600 border-rose-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo">✏️ Boli</button>
-                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('highlighter'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Subrayador">🖍️ Subrayador</button>
-                            
-                            {/* BOTÓN DE FLECHA AZUL */}
-                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('arrow'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'arrow' ? 'bg-blue-100 text-blue-600 border-blue-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Flecha (Clic y arrastrar)">↗ Flecha</button>
-                            
-                            {isDrawingMode && (<button onClick={() => setIsDrawingMode(false)} className="px-2 text-slate-400 hover:text-slate-600" title="Cancelar">✕</button>)}
+                        {/* --- PALETA DE COLORES --- */}
+                        <div className="flex gap-2 mb-1 justify-center">
+                            {COLORS.map((c) => (
+                                <button 
+                                    key={c.hex} 
+                                    onClick={() => setActiveColor(c.hex)}
+                                    className={`w-6 h-6 rounded-full border-2 transition-all ${activeColor === c.hex ? 'border-slate-600 scale-110 shadow-md' : 'border-transparent hover:scale-110'}`}
+                                    style={{ backgroundColor: c.hex }}
+                                    title={c.name}
+                                />
+                            ))}
                         </div>
+
+                        {/* --- BARRA DE HERRAMIENTAS --- */}
+                        <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-lg">
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo"><span>✏️</span></button>
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('highlighter'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Subrayador"><span>🖍️</span></button>
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('arrow'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'arrow' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Flecha"><span>↗</span></button>
+                            {/* NUEVO BOTÓN RECTÁNGULO */}
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('rect'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'rect' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Marco Cuadrado"><span>⬜</span></button>
+                        </div>
+                        {isDrawingMode && <button onClick={() => setIsDrawingMode(false)} className="text-[10px] text-center text-slate-400 hover:text-slate-600 font-bold uppercase py-1">Cancelar dibujo ✕</button>}
+
                         <div className="flex gap-2 mt-1">
                             <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                             <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}><span>📎</span>{selectedFile ? "LISTO" : "ADJUNTAR"}</label>
-                            <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`}>{loading ? "..." : "GUARDAR"}</button>
+                            <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`} style={{ backgroundColor: loading ? undefined : activeColor }}>{loading ? "..." : "GUARDAR"}</button>
                         </div>
                         <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">MODIFICACIÓN GENERAL</button>
                         {selectedFile && <span className="text-[10px] font-bold text-emerald-600 text-center truncate">📄 {selectedFile.name}</span>}
@@ -354,14 +404,14 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {corrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones</div>}
                 {corrections.map((c, i) => (
-                  <div key={c.id} onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`p-4 rounded-2xl border-2 transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200')} ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`}>
+                  <div key={c.id} onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`p-4 rounded-2xl border-2 transition-all ${c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : 'bg-white'} ${hoveredId===c.id?'scale-[1.02] shadow-md':''}`} style={{ borderColor: c.resolved ? undefined : (c.color || '#e2e8f0') }}>
                     <div className="flex gap-3 items-start">
-                      <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}>{c.resolved && "✓"}</button>
+                      <button onClick={() => toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white hover:scale-110"}`} style={{ borderColor: c.resolved ? undefined : (c.color || '#cbd5e1') }}>{c.resolved && "✓"}</button>
                       <div className="flex-1">
-                        <div className="flex justify-between"><span className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-400' : 'text-purple-300'}`}>#{i+1} {c.is_general && "GENERAL"}</span><span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900")}`}>{c.content}</p>
+                        <div className="flex justify-between"><span className="text-[9px] font-black uppercase" style={{ color: c.color || '#475569' }}>#{i+1} {c.is_general && "GENERAL"}</span><span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                        <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : "text-slate-700"}`}>{c.content}</p>
                         <div className="flex flex-wrap gap-2 mt-2 items-center">{c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}</div>
-                        <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">{!isLocked && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}</div>
+                        <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">{!isLocked && <button onClick={() => deleteComment(c.id)} className="text-[9px] font-black uppercase text-slate-300 hover:text-red-500">Borrar</button>}</div>
                       </div>
                     </div>
                   </div>
