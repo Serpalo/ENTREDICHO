@@ -15,8 +15,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const [comments, setComments] = useState<any[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   
-  // Estado para el botón de descarga
+  // ESTADOS NUEVOS PARA SUBIDA Y DESCARGA
   const [downloading, setDownloading] = useState(false);
+  const [uploadDeadline, setUploadDeadline] = useState(""); // <--- FECHA LÍMITE
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
@@ -70,71 +71,41 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
-  // --- FUNCIÓN PARA DESCARGAR FOLLETO COMPLETO (SOLO IMÁGENES) ---
+  // DESCARGAR FOLLETO
   const handleDownloadBrochure = async () => {
     if (currentItems.length === 0) return alert("No hay páginas para descargar.");
     setDownloading(true);
-
     try {
         const doc = new jsPDF();
-        
         for (let i = 0; i < currentItems.length; i++) {
             const page = currentItems[i];
-            
-            // 1. Descargamos la imagen como Blob
             const response = await fetch(page.image_url);
             const blob = await response.blob();
-            
-            // 2. Convertimos Blob a Base64
             const base64 = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result as string);
                 reader.readAsDataURL(blob);
             });
-
-            // 3. Obtenemos dimensiones
             const imgProps = await new Promise<{width: number, height: number}>((resolve) => {
                 const img = new Image();
                 img.src = base64;
                 img.onload = () => resolve({ width: img.width, height: img.height });
             });
-
-            // 4. Calculamos proporción para A4
-            const pdfWidth = 210; 
-            const pdfHeight = 297;
-            const imgRatio = imgProps.width / imgProps.height;
-
+            const pdfWidth = 210; const pdfHeight = 297; const imgRatio = imgProps.width / imgProps.height;
             if (i > 0) doc.addPage();
-
             const margin = 10;
             const availableWidth = pdfWidth - (margin * 2);
             const availableHeight = pdfHeight - (margin * 2);
-            
-            let finalWidth = availableWidth;
-            let finalHeight = availableWidth / imgRatio;
-
-            if (finalHeight > availableHeight) {
-                finalHeight = availableHeight;
-                finalWidth = availableHeight * imgRatio;
-            }
-
-            const x = (pdfWidth - finalWidth) / 2;
-            const y = (pdfHeight - finalHeight) / 2;
-
+            let finalWidth = availableWidth; let finalHeight = availableWidth / imgRatio;
+            if (finalHeight > availableHeight) { finalHeight = availableHeight; finalWidth = availableHeight * imgRatio; }
+            const x = (pdfWidth - finalWidth) / 2; const y = (pdfHeight - finalHeight) / 2;
             doc.addImage(base64, 'JPEG', x, y, finalWidth, finalHeight);
-            
-            // SIN TEXTO: No añadimos nada más, solo la imagen limpia.
         }
-
         const folderName = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length-1].name : "Folleto";
         doc.save(`${folderName}_v${selectedVersion}.pdf`);
-
     } catch (error: any) {
-        console.error(error);
-        alert("Error al generar el PDF: " + error.message);
-    } finally {
-        setDownloading(false);
-    }
+        console.error(error); alert("Error al generar el PDF: " + error.message);
+    } finally { setDownloading(false); }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,11 +119,22 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       const { error } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
       if (error) { alert("Error: " + error.message); continue; }
       const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
-      await supabase.from('projects').insert([{ name: file.name, parent_id: folderId ? parseInt(folderId) : null, image_url: data.publicUrl, version: nextVer, storage_name: cleanName }]);
+      
+      // INSERTAMOS CON FECHA LÍMITE SI EXISTE
+      await supabase.from('projects').insert([{ 
+          name: file.name, 
+          parent_id: folderId ? parseInt(folderId) : null, 
+          image_url: data.publicUrl, 
+          version: nextVer, 
+          storage_name: cleanName,
+          correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null // <--- AQUÍ SE GUARDA
+      }]);
     }
     if (onRefresh) await onRefresh();
     setSelectedVersion(nextVer);
-    alert(`Versión ${nextVer} subida`);
+    // Limpiamos la fecha después de subir
+    setUploadDeadline("");
+    alert(`Versión ${nextVer} subida correctamente`);
   };
 
   const deleteProject = async (e: any, id: number) => { e.stopPropagation(); if(confirm("¿Borrar?")) { await supabase.from('projects').delete().eq('id', id); if(onRefresh) onRefresh(); } };
@@ -178,6 +160,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
     const pendingCount = myComments.filter(c => !c.resolved).length;
+    // Comprobar deadline en visor
+    const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group">
@@ -188,6 +172,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
                 {p.is_approved ? (
                     <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">🎉 APROBADA</div>
+                ) : isDeadlinePassed ? (
+                    <div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">⏳ PLAZO CERRADO</div>
                 ) : pendingCount > 0 ? (
                     <div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>
                 ) : myComments.length > 0 ? (
@@ -251,12 +237,25 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     disabled={downloading}
                     className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
                  >
-                    {downloading ? "GENERANDO PDF..." : "⬇ DESCARGAR FOLLETO"}
+                    {downloading ? "GENERANDO..." : "⬇ PDF COMPLETO"}
                  </button>
              )}
 
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
+             
              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
+             
+             {/* --- SELECCIÓN DE FECHA LÍMITE --- */}
+             <div className="flex flex-col items-end gap-1">
+                 <label className="text-[9px] font-bold text-slate-400 uppercase">¿Correcciones hasta?</label>
+                 <input 
+                    type="datetime-local" 
+                    value={uploadDeadline}
+                    onChange={(e) => setUploadDeadline(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] text-slate-600 font-bold focus:outline-none focus:border-rose-500 shadow-inner"
+                 />
+             </div>
+
              <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
           </div>
         </div>
@@ -281,6 +280,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                     {currentItems.map((p: any) => {
                       const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                       const pendingCount = myComments.filter(c => !c.resolved).length;
+                      const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
+
                       return (
                         <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
                           <td className="px-8 py-6 align-top"><div onClick={() => navigate(`/project/${p.id}`)} className="w-16 h-20 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden shadow-sm cursor-pointer hover:opacity-80 transition-opacity"><img src={p.image_url} className="w-full h-full object-cover" /></div></td>
@@ -289,6 +290,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                             <div className="flex flex-col gap-2">
                                {p.is_approved ? (
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
+                               ) : isDeadlinePassed ? (
+                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-4 py-1.5 rounded-full shadow-md">⏳ PLAZO CERRADO</div>
                                ) : pendingCount > 0 ? (
                                  <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                                ) : myComments.length > 0 ? (
@@ -310,11 +313,15 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                  {currentItems.map((p: any) => {
                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
                      const pendingCount = myComments.filter(c => !c.resolved).length;
+                     const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
+
                      return (
                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           {p.is_approved ? (
                               <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>
+                          ) : isDeadlinePassed ? (
+                              <div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>
                           ) : pendingCount > 0 ? (
                               <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>
                           ) : pendingCount === 0 && myComments.length > 0 && (
