@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
+import { jsPDF } from "jspdf"; // <--- Asegúrate de importar esto
 
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
@@ -13,10 +14,19 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
+  
+  // Estado para el botón de descarga
+  const [downloading, setDownloading] = useState(false);
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
-  const allItemsInFolder = useMemo(() => projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id).sort((a: any, b: any) => a.name.localeCompare(b.name)), [projects, folderId]);
+  
+  // Ordenar los items por nombre para que las páginas salgan en orden (01, 02, 03...)
+  const allItemsInFolder = useMemo(() => 
+    projects.filter((p: any) => folderId ? String(p.parent_id) === String(folderId) : !p.parent_id)
+    .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })), 
+  [projects, folderId]);
+
   const availableVersions = useMemo(() => { const v = new Set<number>(); allItemsInFolder.forEach((p: any) => v.add(p.version || 1)); return Array.from(v).sort((a, b) => a - b); }, [allItemsInFolder]);
 
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
@@ -60,6 +70,81 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   };
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
+
+  // --- FUNCIÓN PARA DESCARGAR FOLLETO COMPLETO ---
+  const handleDownloadBrochure = async () => {
+    if (currentItems.length === 0) return alert("No hay páginas para descargar.");
+    setDownloading(true);
+
+    try {
+        const doc = new jsPDF();
+        
+        // Recorremos cada página
+        for (let i = 0; i < currentItems.length; i++) {
+            const page = currentItems[i];
+            
+            // 1. Descargamos la imagen como Blob
+            const response = await fetch(page.image_url);
+            const blob = await response.blob();
+            
+            // 2. Convertimos Blob a Base64
+            const base64 = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+            });
+
+            // 3. Obtenemos dimensiones de la imagen para ajustar el PDF
+            const imgProps = await new Promise<{width: number, height: number}>((resolve) => {
+                const img = new Image();
+                img.src = base64;
+                img.onload = () => resolve({ width: img.width, height: img.height });
+            });
+
+            // 4. Calculamos proporción para A4 (210x297mm)
+            const pdfWidth = 210; 
+            const pdfHeight = 297;
+            const imgRatio = imgProps.width / imgProps.height;
+
+            // Si es la primera página, el documento ya tiene una. Si no, añadimos nueva.
+            if (i > 0) doc.addPage();
+
+            // Ajustar imagen al PDF (Mantenemos márgenes mínimos)
+            // Si la imagen es más ancha que alta, podríamos rotar la página, 
+            // pero para simplificar lo encajaremos en A4 vertical.
+            const margin = 10;
+            const availableWidth = pdfWidth - (margin * 2);
+            const availableHeight = pdfHeight - (margin * 2);
+            
+            let finalWidth = availableWidth;
+            let finalHeight = availableWidth / imgRatio;
+
+            if (finalHeight > availableHeight) {
+                finalHeight = availableHeight;
+                finalWidth = availableHeight * imgRatio;
+            }
+
+            const x = (pdfWidth - finalWidth) / 2;
+            const y = (pdfHeight - finalHeight) / 2;
+
+            doc.addImage(base64, 'JPEG', x, y, finalWidth, finalHeight);
+            
+            // Pie de página opcional
+            doc.setFontSize(10);
+            doc.text(`Página ${i + 1} - ${page.name}`, 10, 290);
+        }
+
+        // Nombre del archivo
+        const folderName = breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length-1].name : "Folleto";
+        doc.save(`${folderName}_v${selectedVersion}.pdf`);
+
+    } catch (error: any) {
+        console.error(error);
+        alert("Error al generar el PDF: " + error.message);
+    } finally {
+        setDownloading(false);
+    }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -110,7 +195,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
         <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
              <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
-                {/* --- ETIQUETAS EN MODO VISOR --- */}
                 {p.is_approved ? (
                     <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">🎉 APROBADA</div>
                 ) : pendingCount > 0 ? (
@@ -169,6 +253,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
                 <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
              </div>
+             
+             {/* --- BOTÓN NUEVO: DESCARGAR FOLLETO --- */}
+             {currentItems.length > 0 && (
+                 <button 
+                    onClick={handleDownloadBrochure} 
+                    disabled={downloading}
+                    className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                 >
+                    {downloading ? "GENERANDO PDF..." : "⬇ DESCARGAR FOLLETO"}
+                 </button>
+             )}
+
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
              <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
@@ -201,7 +297,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                           <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
                           <td className="pl-12 py-6 align-top">
                             <div className="flex flex-col gap-2">
-                               {/* --- LÓGICA DE ETIQUETAS EN LISTA --- */}
                                {p.is_approved ? (
                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
                                ) : pendingCount > 0 ? (
@@ -228,7 +323,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                      return (
                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                          {/* --- ETIQUETAS EN MODO GRID --- */}
                           {p.is_approved ? (
                               <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>
                           ) : pendingCount > 0 ? (
@@ -236,7 +330,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                           ) : pendingCount === 0 && myComments.length > 0 && (
                               <div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>
                           )}
-                          
                           <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
                         </div>
                         <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
