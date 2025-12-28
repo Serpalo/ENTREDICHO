@@ -16,7 +16,8 @@ const COLORS = [
     { name: 'Rosa', hex: '#db2777' }
 ];
 
-const ProjectDetail = ({ projects = [], onRefresh }: any) => {
+// RECIBIMOS userRole Y session DEL PADRE (APP.TSX)
+const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => {
   const navigate = useNavigate();
   const { projectId } = useParams();
   
@@ -133,6 +134,9 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   }, [projectId]);
 
   const togglePageApproval = async () => {
+      // SOLO EL ADMIN PUEDE CAMBIAR EL ESTADO
+      if (userRole !== 'admin') return alert("Solo el administrador puede aprobar o reabrir páginas.");
+      
       const newState = !isPageApproved; setIsPageApproved(newState); const { error } = await supabase.from('projects').update({ is_approved: newState }).eq('id', projectId); if (error) { alert("Error al actualizar estado"); setIsPageApproved(!newState); } if (onRefresh) onRefresh();
   };
 
@@ -156,7 +160,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     const x = ((clientX - rect.left) / rect.width) * 100; const y = ((clientY - rect.top) / rect.height) * 100; return { x, y };
   };
 
-  // --- MATEMÁTICAS PARA FORMAS ---
   const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => {
       let path = `M ${x1} ${y1} L ${x2} ${y2}`;
       const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -219,6 +222,8 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
 
   const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
+    
+    // GUARDAMOS EL EMAIL DEL USUARIO (session.user.email)
     const { error: insertError } = await supabase.from('comments').insert([{ 
         page_id: projectId, 
         content: newNote, 
@@ -229,25 +234,20 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
         y: newCoords?.y || null, 
         drawing_data: drawingDataString, 
         drawing_tool: usedTool,
-        color: activeColor
+        color: activeColor,
+        user_email: session?.user?.email || 'Anónimo' // <--- NUEVO
     }]); 
     if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
 
-  // --- LÓGICA OPTIMISTA PARA EL CHECK ---
   const toggleCheck = async (id: string, currentResolved: boolean) => { 
-      // 1. Actualizamos visualmente al instante
       setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
-      // 2. Enviamos a base de datos
       await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
   };
 
-  // --- LÓGICA OPTIMISTA PARA BORRAR ---
   const deleteComment = async (id: string) => { 
       if (window.confirm("¿Borrar nota?")) { 
-          // 1. Lo borramos de la lista visualmente YA
           setCorrections(prev => prev.filter(c => c.id !== id));
-          // 2. Le decimos a Supabase que lo borre de verdad
           await supabase.from('comments').delete().eq('id', id); 
       } 
   };
@@ -444,6 +444,11 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                             <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         
+                        {/* --- AQUI MOSTRAMOS EL EMAIL DEL USUARIO --- */}
+                        <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">
+                            👤 {c.user_email || 'Anónimo'}
+                        </span>
+
                         <p className={`text-sm font-bold leading-snug mt-1 ${c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900")}`}>
                             {c.content}
                         </p>
@@ -453,6 +458,7 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                         </div>
 
                         <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
+                           {/* SOLO EL ADMIN O EL DUEÑO DEL COMENTARIO PUEDEN BORRAR (OPCIONAL, AQUI LO DEJO ABIERTO PERO PROTEGIDO POR UI) */}
                            {!isLocked && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
                         </div>
                       </div>
