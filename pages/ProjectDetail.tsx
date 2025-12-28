@@ -3,8 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { jsPDF } from "jspdf";
 
-// Tipo para definir las herramientas disponibles
-type DrawingTool = 'pen' | 'highlighter';
+// AÑADIMOS 'arrow' A LOS TIPOS
+type DrawingTool = 'pen' | 'highlighter' | 'arrow';
 
 const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const navigate = useNavigate();
@@ -81,8 +81,6 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [sliderPosition, setSliderPosition] = useState(50);
   const [compareTargetId, setCompareTargetId] = useState<string>("");
   const [comparisonMode, setComparisonMode] = useState<'split' | 'overlay'>('split');
-  
-  // ESTADOS NUEVOS (MARCADORES Y LUPA)
   const [hideMarkers, setHideMarkers] = useState(false);
   const [isMagnifierActive, setIsMagnifierActive] = useState(false);
   const [magnifierState, setMagnifierState] = useState({ x: 0, y: 0, show: false });
@@ -103,6 +101,10 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");
   const [tempDrawings, setTempDrawings] = useState<{path: string, tool: DrawingTool}[]>([]);
+  
+  // ESTADO PARA EL INICIO DE LA FLECHA
+  const [arrowStart, setArrowStart] = useState<{x: number, y: number} | null>(null);
+  
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
   // --- CARGA DE DATOS ---
@@ -145,45 +147,98 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
     const x = ((clientX - rect.left) / rect.width) * 100; const y = ((clientY - rect.top) / rect.height) * 100; return { x, y };
   };
 
+  // --- FUNCIÓN MATEMÁTICA PARA DIBUJAR FLECHA ---
+  const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => {
+      // 1. Línea principal
+      let path = `M ${x1} ${y1} L ${x2} ${y2}`;
+      
+      // 2. Calcular ángulo de la línea
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      
+      // 3. Longitud de la cabeza de la flecha (ajustable)
+      const headLength = 2; // Unidades relativas (0-100)
+      
+      // 4. Calcular puntos de las "alas" de la flecha
+      // Ala derecha (+135 grados desde el ángulo de la línea)
+      const x3 = x2 - headLength * Math.cos(angle - Math.PI / 6);
+      const y3 = y2 - headLength * Math.sin(angle - Math.PI / 6);
+      
+      // Ala izquierda (-135 grados)
+      const x4 = x2 - headLength * Math.cos(angle + Math.PI / 6);
+      const y4 = y2 - headLength * Math.sin(angle + Math.PI / 6);
+
+      // 5. Añadir al path
+      path += ` M ${x2} ${y2} L ${x3} ${y3} M ${x2} ${y2} L ${x4} ${y4}`;
+      
+      return path;
+  };
+
   const handlePointerDown = (e: any) => {
-    // Si la lupa está activa, no permitimos dibujar ni poner puntos
     if (isComparing || isLocked || isMagnifierActive) return;
     
-    if (isDrawingMode) { setIsDrawing(true); const { x, y } = getRelativeCoords(e); setCurrentPath(`M ${x} ${y}`); e.preventDefault(); } 
+    if (isDrawingMode) { 
+        setIsDrawing(true); 
+        const { x, y } = getRelativeCoords(e);
+        
+        if (activeTool === 'arrow') {
+            // Guardamos el punto de inicio de la flecha
+            setArrowStart({ x, y });
+            // Iniciamos el path visualmente
+            setCurrentPath(`M ${x} ${y} L ${x} ${y}`);
+        } else {
+            // Lógica normal para boli/subrayador
+            setCurrentPath(`M ${x} ${y}`); 
+        }
+        e.preventDefault(); 
+    } 
     else { const { x, y } = getRelativeCoords(e); if (x >= 0 && x <= 100 && y >= 0 && y <= 100) { setNewCoords({ x: x/100, y: y/100 }); setTimeout(() => textareaRef.current?.focus(), 50); } }
   };
 
   const handlePointerMove = (e: any) => { 
-      // 1. LÓGICA DE LUPA
       if (isMagnifierActive && imageContainerRef.current) {
           const rect = imageContainerRef.current.getBoundingClientRect();
           const x = e.clientX - rect.left;
           const y = e.clientY - rect.top;
-          
-          // Solo actualizamos si el ratón está dentro
-          if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) {
-              setMagnifierState({ x, y, show: true });
-          } else {
-              setMagnifierState(prev => ({ ...prev, show: false }));
-          }
+          if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) { setMagnifierState({ x, y, show: true }); } else { setMagnifierState(prev => ({ ...prev, show: false })); }
       }
 
-      // 2. LÓGICA DE DIBUJO
       if (!isDrawing || !isDrawingMode) return; 
       e.preventDefault(); 
       const { x, y } = getRelativeCoords(e); 
-      setCurrentPath(prev => `${prev} L ${x} ${y}`); 
+      
+      if (activeTool === 'arrow' && arrowStart) {
+          // Si estamos dibujando flecha, recalculamos toda la flecha desde el inicio hasta la posición actual
+          const arrowPath = generateArrowPath(arrowStart.x, arrowStart.y, x, y);
+          setCurrentPath(arrowPath);
+      } else {
+          // Boli/Subrayador
+          setCurrentPath(prev => `${prev} L ${x} ${y}`); 
+      }
   };
 
-  const handlePointerUp = () => { if (isDrawing && isDrawingMode && currentPath) { setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]); setCurrentPath(""); } setIsDrawing(false); };
-  const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); };
+  const handlePointerUp = () => { 
+      if (isDrawing && isDrawingMode && currentPath) { 
+          setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool }]); 
+          setCurrentPath(""); 
+      } 
+      setIsDrawing(false); 
+      setArrowStart(null);
+  };
+  
+  const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); setArrowStart(null); };
 
   const handleAddNote = async (isGeneral = false) => {
     if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; const { error: insertError } = await supabase.from('comments').insert([{ page_id: projectId, content: newNote, attachment_url: fileUrl, resolved: false, is_general: isGeneral, x: newCoords?.x || null, y: newCoords?.y || null, drawing_data: drawingDataString, drawing_tool: usedTool, }]); if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
   const toggleCheck = async (id: string, currentResolved: boolean) => { await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); };
   const deleteComment = async (id: string) => { if (window.confirm("¿Borrar nota?")) { await supabase.from('comments').delete().eq('id', id); } };
-  const getStrokeStyle = (tool: DrawingTool) => { const isHighlighter = tool === 'highlighter'; return { color: isHighlighter ? "#fde047" : "#f43f5e", width: isHighlighter ? "2" : "0.5", opacity: isHighlighter ? "0.5" : "1" }; };
+  
+  const getStrokeStyle = (tool: DrawingTool) => { 
+      const isHighlighter = tool === 'highlighter'; 
+      const isArrow = tool === 'arrow';
+      if (isArrow) return { color: "#ef4444", width: "1", opacity: "1" }; // Flecha roja y sólida
+      return { color: isHighlighter ? "#fde047" : "#f43f5e", width: isHighlighter ? "2" : "0.5", opacity: isHighlighter ? "0.5" : "1" }; 
+  };
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
 
@@ -216,20 +271,10 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
             ) : (project.version > 1 && <span className="text-[9px] text-slate-300 font-bold border border-slate-100 px-2 py-1 rounded">SIN PREVIO ({currentIndex + 1})</span>)}
             
             <div className="flex items-center gap-2">
-                {/* --- BOTÓN DE LUPA --- */}
-                <button 
-                    onClick={() => { setIsMagnifierActive(!isMagnifierActive); setHideMarkers(false); }} 
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase transition-all ${isMagnifierActive ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                >
-                    <span>🔍</span> {isMagnifierActive ? "Lupa Activa" : "Lupa"}
-                </button>
-
-                {/* BOTÓN DE OCULTAR MARCAS */}
+                <button onClick={() => { setIsMagnifierActive(!isMagnifierActive); setHideMarkers(false); }} className={`flex items-center gap-1 px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase transition-all ${isMagnifierActive ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}><span>🔍</span> {isMagnifierActive ? "Lupa Activa" : "Lupa"}</button>
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-xl">
                     <span className="text-[9px] font-bold text-slate-400 uppercase hidden xl:block">Ocultar marcas</span>
-                    <button onClick={() => setHideMarkers(!hideMarkers)} className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`} title="Ocultar/Mostrar marcadores">
-                        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
+                    <button onClick={() => setHideMarkers(!hideMarkers)} className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 relative ${hideMarkers ? 'bg-slate-700' : 'bg-slate-200'}`} title="Ocultar/Mostrar marcadores"><div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${hideMarkers ? 'translate-x-4' : 'translate-x-0'}`} /></button>
                 </div>
             </div>
 
@@ -243,17 +288,13 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* ZONA CENTRAL - IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {!isComparing && prevProject && (<button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>)}
-            
             {isComparing && compareProject ? (
                 comparisonMode === 'split' ? (
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                         <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}>
-                            <div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}><img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" /><div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{compareProject.version} (Anterior)</div></div>
-                        </div>
+                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}><div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}><img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" /><div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{compareProject.version} (Anterior)</div></div></div>
                         <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
                         <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{project.version} (Actual)</div>
                     </div>
@@ -271,39 +312,23 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                   {project.image_url ? <img src={project.image_url} className="w-full h-full object-contain block select-none pointer-events-none" draggable={false} /> : <div className="w-[500px] h-[700px] flex items-center justify-center">SIN IMAGEN</div>}
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
-                  
-                  {/* --- RENDERIZADO DE LA LUPA --- */}
-                  {isMagnifierActive && magnifierState.show && imageContainerRef.current && (
-                      <div 
-                        style={{
-                            position: 'absolute',
-                            left: magnifierState.x - 75, // Centrado (mitad de 150)
-                            top: magnifierState.y - 75,
-                            width: '150px',
-                            height: '150px',
-                            borderRadius: '50%',
-                            border: '4px solid white',
-                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                            pointerEvents: 'none',
-                            backgroundImage: `url(${project.image_url})`,
-                            backgroundRepeat: 'no-repeat',
-                            // La magia: el fondo debe ser proporcional al tamaño REAL mostrado, multiplicado por el zoom de la lupa (2.5)
-                            backgroundSize: `${imageContainerRef.current.clientWidth * 2.5}px ${imageContainerRef.current.clientHeight * 2.5}px`,
-                            backgroundPosition: `-${(magnifierState.x * 2.5) - 75}px -${(magnifierState.y * 2.5) - 75}px`,
-                            zIndex: 100,
-                            backgroundColor: 'white'
-                        }}
-                      />
-                  )}
-
+                  {isMagnifierActive && magnifierState.show && imageContainerRef.current && (<div style={{ position: 'absolute', left: magnifierState.x - 75, top: magnifierState.y - 75, width: '150px', height: '150px', borderRadius: '50%', border: '4px solid white', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', pointerEvents: 'none', backgroundImage: `url(${project.image_url})`, backgroundRepeat: 'no-repeat', backgroundSize: `${imageContainerRef.current.clientWidth * 2.5}px ${imageContainerRef.current.clientHeight * 2.5}px`, backgroundPosition: `-${(magnifierState.x * 2.5) - 75}px -${(magnifierState.y * 2.5) - 75}px`, zIndex: 100, backgroundColor: 'white' }} />)}
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
                             {corrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
-                                    const isHovered = hoveredId === c.id; const isHighlighter = c.drawing_tool === 'highlighter';
-                                    let strokeColor = isHighlighter ? "#fde047" : "#f43f5e"; if (c.is_general && !isHighlighter) strokeColor = "#2563eb"; 
-                                    const strokeWidth = isHighlighter ? (isHovered ? "4" : "2") : (isHovered ? "1.5" : "0.5"); const opacity = isHighlighter ? (isHovered ? "0.8" : "0.5") : "1";
-                                    return (<path key={`${c.id}-${i}`} d={path} stroke={strokeColor} strokeWidth={strokeWidth} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
+                                    const isHovered = hoveredId === c.id; 
+                                    const tool = c.drawing_tool || 'pen';
+                                    const style = getStrokeStyle(tool as DrawingTool);
+                                    let color = style.color;
+                                    let width = style.width;
+                                    let opacity = style.opacity;
+                                    
+                                    if (tool === 'highlighter' && isHovered) { width = "4"; opacity = "0.8"; }
+                                    if (tool === 'pen' && isHovered) { width = "1.5"; }
+                                    if (c.is_general && tool !== 'highlighter' && tool !== 'arrow') color = "#2563eb"; // Azul si es general y no es flecha
+
+                                    return (<path key={`${c.id}-${i}`} d={path} stroke={color} strokeWidth={width} opacity={opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                                 })))}
                             {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
                             {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool).color} strokeWidth={getStrokeStyle(activeTool).width} opacity={getStrokeStyle(activeTool).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
@@ -329,13 +354,17 @@ const ProjectDetail = ({ projects = [], onRefresh }: any) => {
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
-                        {isDrawingMode ? (<span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : 'text-rose-600 bg-rose-50'}`}>{activeTool === 'highlighter' ? '🖍️ Subrayando...' : '✏️ Dibujando...'}</span>) : newCoords ? (<span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>) : null}
+                        {isDrawingMode ? (<span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse ${activeTool === 'highlighter' ? 'text-yellow-600 bg-yellow-100' : (activeTool === 'arrow' ? 'text-red-600 bg-red-100' : 'text-rose-600 bg-rose-50')}`}>{activeTool === 'highlighter' ? '🖍️ Subrayando...' : (activeTool === 'arrow' ? '↗ Dibujando flecha...' : '✏️ Dibujando...')}</span>) : newCoords ? (<span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded animate-bounce">🎯 Punto marcado</span>) : null}
                       </div>
                       <textarea ref={textareaRef} value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
                       <div className="flex flex-col gap-2">
+                        {/* --- BARRA DE HERRAMIENTAS DE DIBUJO ACTUALIZADA --- */}
                         <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-rose-600 border-rose-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo">✏️ Boli</button>
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('highlighter'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Subrayador">🖍️ Subrayador</button>
+                            {/* NUEVO BOTÓN DE FLECHA */}
+                            <button onClick={() => { setIsDrawingMode(true); setActiveTool('arrow'); setNewCoords(null); }} className={`flex-1 p-2 rounded-md border transition-all text-[10px] font-bold flex items-center justify-center gap-1 ${isDrawingMode && activeTool === 'arrow' ? 'bg-red-100 text-red-600 border-red-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Flecha (Clic y arrastrar)">↗ Flecha</button>
+                            
                             {isDrawingMode && (<button onClick={() => setIsDrawingMode(false)} className="px-2 text-slate-400 hover:text-slate-600" title="Cancelar">✕</button>)}
                         </div>
                         <div className="flex gap-2 mt-1">
