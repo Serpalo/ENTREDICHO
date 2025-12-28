@@ -6,8 +6,7 @@ import { jsPDF } from "jspdf";
 const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const navigate = useNavigate();
   const { folderId } = useParams();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
@@ -15,9 +14,14 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const [comments, setComments] = useState<any[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   
-  // ESTADOS NUEVOS PARA SUBIDA Y DESCARGA
+  // ESTADOS PARA LA VENTANA MODAL DE SUBIDA
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<FileList | null>(null);
+  const [uploadDeadline, setUploadDeadline] = useState("");
+  const [isUploading, setIsUploading] = useState(false); // Para mostrar "Subiendo..."
+
+  // Estado para descarga
   const [downloading, setDownloading] = useState(false);
-  const [uploadDeadline, setUploadDeadline] = useState(""); // <--- FECHA LÍMITE
 
   const safeFolders = Array.isArray(folders) ? folders : [];
   const currentFolders = safeFolders.filter(f => folderId ? String(f.parent_id) === String(folderId) : !f.parent_id);
@@ -71,6 +75,50 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   useEffect(() => { loadComments(); const t = setTimeout(loadComments, 1000); return () => clearTimeout(t); }, [projects.length, selectedVersion]);
 
+  // --- FUNCIÓN DE SUBIDA (Ahora desde el modal) ---
+  const handleConfirmUpload = async () => {
+    if (!uploadFiles || uploadFiles.length === 0) return alert("Por favor, selecciona al menos un archivo.");
+    
+    setIsUploading(true);
+    const nextVer = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
+    const ts = Date.now();
+
+    try {
+        for (let i = 0; i < uploadFiles.length; i++) {
+          const file = uploadFiles[i];
+          const cleanName = `${ts}-${String(i+1).padStart(3,'0')}-${file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+          
+          const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
+          if (uploadError) throw uploadError;
+          
+          const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
+          
+          await supabase.from('projects').insert([{ 
+              name: file.name, 
+              parent_id: folderId ? parseInt(folderId) : null, 
+              image_url: data.publicUrl, 
+              version: nextVer, 
+              storage_name: cleanName,
+              correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null 
+          }]);
+        }
+
+        if (onRefresh) await onRefresh();
+        setSelectedVersion(nextVer);
+        
+        // Resetear y cerrar modal
+        setUploadFiles(null);
+        setUploadDeadline("");
+        setIsUploadModalOpen(false);
+        alert(`¡Versión ${nextVer} subida con éxito!`);
+
+    } catch (error: any) {
+        alert("Error subiendo archivos: " + error.message);
+    } finally {
+        setIsUploading(false);
+    }
+  };
+
   // DESCARGAR FOLLETO
   const handleDownloadBrochure = async () => {
     if (currentItems.length === 0) return alert("No hay páginas para descargar.");
@@ -108,35 +156,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     } finally { setDownloading(false); }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files?.length) return;
-    const nextVer = availableVersions.length > 0 ? Math.max(...availableVersions) + 1 : 1;
-    const ts = Date.now();
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const cleanName = `${ts}-${String(i+1).padStart(3,'0')}-${file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const { error } = await supabase.storage.from('FOLLETOS').upload(cleanName, file);
-      if (error) { alert("Error: " + error.message); continue; }
-      const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(cleanName);
-      
-      // INSERTAMOS CON FECHA LÍMITE SI EXISTE
-      await supabase.from('projects').insert([{ 
-          name: file.name, 
-          parent_id: folderId ? parseInt(folderId) : null, 
-          image_url: data.publicUrl, 
-          version: nextVer, 
-          storage_name: cleanName,
-          correction_deadline: uploadDeadline ? new Date(uploadDeadline).toISOString() : null // <--- AQUÍ SE GUARDA
-      }]);
-    }
-    if (onRefresh) await onRefresh();
-    setSelectedVersion(nextVer);
-    // Limpiamos la fecha después de subir
-    setUploadDeadline("");
-    alert(`Versión ${nextVer} subida correctamente`);
-  };
-
   const deleteProject = async (e: any, id: number) => { e.stopPropagation(); if(confirm("¿Borrar?")) { await supabase.from('projects').delete().eq('id', id); if(onRefresh) onRefresh(); } };
   const deleteFolder = async (e: any, id: number) => { e.stopPropagation(); if(confirm("¿Borrar?")) { await supabase.from('folders').delete().eq('id', id); if(onRefresh) onRefresh(); } };
 
@@ -160,7 +179,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
     const myComments = comments.filter(c => String(c.page_id) === String(p.id));
     const pendingCount = myComments.filter(c => !c.resolved).length;
-    // Comprobar deadline en visor
     const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
 
     return (
@@ -243,22 +261,71 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              
-             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
-             
-             {/* --- SELECCIÓN DE FECHA LÍMITE --- */}
-             <div className="flex flex-col items-end gap-1">
-                 <label className="text-[9px] font-bold text-slate-400 uppercase">¿Correcciones hasta?</label>
-                 <input 
-                    type="datetime-local" 
-                    value={uploadDeadline}
-                    onChange={(e) => setUploadDeadline(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] text-slate-600 font-bold focus:outline-none focus:border-rose-500 shadow-inner"
-                 />
-             </div>
-
-             <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
+             {/* BOTÓN QUE ABRE EL MODAL */}
+             <button 
+                onClick={() => setIsUploadModalOpen(true)} 
+                className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all"
+             >
+                {allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}
+             </button>
           </div>
         </div>
+
+        {/* --- VENTANA MODAL DE SUBIDA --- */}
+        {isUploadModalOpen && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-slate-100 animate-[fadeIn_0.2s_ease-out]">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-black italic text-slate-800 uppercase">Subir Versión</h2>
+                        <button onClick={() => setIsUploadModalOpen(false)} className="bg-slate-100 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors">✕</button>
+                    </div>
+                    
+                    <div className="flex flex-col gap-6">
+                        {/* 1. Selección de archivos */}
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">1. Selecciona las imágenes</label>
+                            <input 
+                                type="file" 
+                                multiple 
+                                accept="image/*"
+                                onChange={(e) => setUploadFiles(e.target.files)} 
+                                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer"
+                            />
+                            {uploadFiles && <p className="mt-2 text-xs font-bold text-emerald-600">✅ {uploadFiles.length} archivos seleccionados</p>}
+                        </div>
+
+                        {/* 2. Fecha límite */}
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">2. ¿Fecha límite para correcciones? (Opcional)</label>
+                            <input 
+                                type="datetime-local" 
+                                value={uploadDeadline}
+                                onChange={(e) => setUploadDeadline(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 font-bold focus:outline-none focus:border-rose-500 transition-colors"
+                            />
+                            <p className="mt-1 text-[9px] text-slate-400">Si dejas esto vacío, no habrá fecha límite.</p>
+                        </div>
+
+                        {/* Botones de acción */}
+                        <div className="flex gap-3 mt-4 pt-4 border-t border-slate-100">
+                            <button 
+                                onClick={() => setIsUploadModalOpen(false)} 
+                                className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs uppercase hover:bg-slate-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleConfirmUpload} 
+                                disabled={isUploading || !uploadFiles}
+                                className={`flex-1 py-3 text-white rounded-xl font-black text-xs uppercase shadow-lg transition-all ${isUploading || !uploadFiles ? 'bg-slate-300 cursor-not-allowed' : 'bg-rose-600 hover:scale-105 hover:bg-rose-700'}`}
+                            >
+                                {isUploading ? "Subiendo..." : "CONFIRMAR SUBIDA"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {currentFolders.length > 0 && <div className="grid grid-cols-4 gap-6 mb-10">{currentFolders.map(f => (<div key={f.id} onClick={() => navigate(`/folder/${f.id}`)} className="group relative bg-white p-8 rounded-[2rem] border border-slate-100 flex flex-col items-center cursor-pointer hover:shadow-lg transition-all"><button onClick={(e) => deleteFolder(e, f.id)} className="absolute top-4 right-4 bg-rose-50 text-rose-600 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">✕</button><span className="text-4xl mb-2">📁</span><span className="text-[10px] font-black uppercase text-slate-500">{f.name}</span></div>))}</div>}
 
