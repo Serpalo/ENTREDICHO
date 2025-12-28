@@ -9,14 +9,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
   // --- ESTADOS ---
   const [openFolders, setOpenFolders] = useState<Record<number, boolean>>({});
-  
-  // Vista por defecto: 'list'
   const [viewMode, setViewMode] = useState<'list' | 'grid' | 'visor'>('list');
-  
   const [selectedVersion, setSelectedVersion] = useState<number>(1);
   const [comments, setComments] = useState<any[]>([]);
-
-  // Estado para controlar la página actual en el modo Visor
   const [pageIndex, setPageIndex] = useState(0);
 
   const safeFolders = Array.isArray(folders) ? folders : [];
@@ -25,31 +20,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
   const availableVersions = useMemo(() => { const v = new Set<number>(); allItemsInFolder.forEach((p: any) => v.add(p.version || 1)); return Array.from(v).sort((a, b) => a - b); }, [allItemsInFolder]);
 
   useEffect(() => { if (availableVersions.length > 0) setSelectedVersion(availableVersions[availableVersions.length - 1]); }, [availableVersions]);
-
-  // Resetear el índice de página si cambiamos de carpeta o versión
   useEffect(() => { setPageIndex(0); }, [folderId, selectedVersion]);
 
   const currentItems = allItemsInFolder.filter((p: any) => (p.version || 1) === selectedVersion);
 
-  // --- LÓGICA DE MIGAS DE PAN (BREADCRUMBS) ---
-  // Esto calcula la ruta completa: T2 / HG / UNICO
+  // BREADCRUMBS
   const breadcrumbs = useMemo(() => {
     if (!folderId) return [];
     const crumbs = [];
     let current = safeFolders.find(f => String(f.id) === String(folderId));
     while (current) {
-        crumbs.unshift(current); // Añadimos al principio
-        // Buscamos al padre
+        crumbs.unshift(current);
         current = safeFolders.find(f => String(f.id) === String(current.parent_id));
     }
     return crumbs;
   }, [folderId, safeFolders]);
 
-  // --- NAVEGACIÓN VISOR ---
+  // VISOR NAV
   const prevPage = () => { if (pageIndex > 0) setPageIndex(p => p - 1); };
   const nextPage = () => { if (pageIndex < currentItems.length - 1) setPageIndex(p => p + 1); };
 
-  // Teclado para las flechas
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (viewMode === 'visor') {
@@ -61,12 +51,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     return () => window.removeEventListener('keydown', handleKey);
   }, [viewMode, pageIndex, currentItems.length]);
 
-
-  // --- CARGA DE COMENTARIOS ---
+  // CARGA COMENTARIOS
   const loadComments = async () => {
     const pageIds = allItemsInFolder.map((p: any) => p.id);
     if (pageIds.length === 0) return;
-
     const { data } = await supabase.from('comments').select('*').in('page_id', pageIds);
     if (data) setComments(data);
   };
@@ -107,7 +95,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
     );
   });
 
-  // Helper para renderizar el contenido del Visor
   const renderVisor = () => {
     if (currentItems.length === 0) return null;
     const p = currentItems[pageIndex];
@@ -118,21 +105,18 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
 
     return (
       <div className="relative w-full h-full flex flex-col items-center justify-center bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group">
-        <button
-            onClick={(e) => { e.stopPropagation(); prevPage(); }}
-            disabled={pageIndex === 0}
-            className={`absolute left-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === 0 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
-        >
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-        </button>
+        <button onClick={(e) => { e.stopPropagation(); prevPage(); }} disabled={pageIndex === 0} className={`absolute left-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === 0 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
 
         <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
              <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
-                {pendingCount > 0 ? (
+                {/* --- ETIQUETAS EN MODO VISOR --- */}
+                {p.is_approved ? (
+                    <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">🎉 APROBADA</div>
+                ) : pendingCount > 0 ? (
                     <div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>
                 ) : myComments.length > 0 ? (
-                    <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>
+                    <div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>
                 ) : null}
              </div>
         </div>
@@ -148,17 +132,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
              </div>
         </div>
 
-        <button
-            onClick={(e) => { e.stopPropagation(); nextPage(); }}
-            disabled={pageIndex === currentItems.length - 1}
-            className={`absolute right-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === currentItems.length - 1 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}
-        >
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </button>
+        <button onClick={(e) => { e.stopPropagation(); nextPage(); }} disabled={pageIndex === currentItems.length - 1} className={`absolute right-4 z-20 p-4 rounded-full shadow-xl transition-all duration-300 ${pageIndex === currentItems.length - 1 ? 'opacity-0 pointer-events-none' : 'bg-gray-800 text-white hover:bg-rose-600 hover:scale-110 cursor-pointer'}`}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
       </div>
     );
   };
-
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
@@ -174,26 +151,16 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
       <div className="flex-1 p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-rose-600">
           <div className="flex flex-col gap-2">
-            
-            {/* --- AQUÍ ESTÁ EL CAMBIO DE LA RUTA --- */}
             <h1 className="text-4xl font-black italic uppercase text-slate-800 tracking-tighter flex items-center flex-wrap gap-2">
                 {breadcrumbs.length > 0 ? (
                     breadcrumbs.map((crumb, idx) => (
                         <React.Fragment key={crumb.id}>
-                            <span 
-                                onClick={() => navigate(`/folder/${crumb.id}`)}
-                                className={`cursor-pointer hover:text-rose-600 transition-colors ${idx === breadcrumbs.length - 1 ? 'text-slate-800' : 'text-slate-400'}`}
-                            >
-                                {crumb.name}
-                            </span>
+                            <span onClick={() => navigate(`/folder/${crumb.id}`)} className={`cursor-pointer hover:text-rose-600 transition-colors ${idx === breadcrumbs.length - 1 ? 'text-slate-800' : 'text-slate-400'}`}>{crumb.name}</span>
                             {idx < breadcrumbs.length - 1 && <span className="text-slate-300">/</span>}
                         </React.Fragment>
                     ))
-                ) : (
-                    "MIS PROYECTOS"
-                )}
+                ) : "MIS PROYECTOS"}
             </h1>
-
             <div className="flex gap-2 mt-2">{availableVersions.map(v => (<button key={v} onClick={() => setSelectedVersion(v)} className={`px-4 py-1 rounded-full text-[10px] font-black uppercase transition-all ${selectedVersion===v?'bg-rose-600 text-white shadow-md scale-105':'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>V{v}</button>))}</div>
           </div>
           <div className="flex gap-4 items-center">
@@ -202,7 +169,6 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                 <button onClick={() => setViewMode('list')} className={`p-3 rounded-lg transition-all ${viewMode==='list'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Lista">📄</button>
                 <button onClick={() => setViewMode('grid')} className={`p-3 rounded-lg transition-all ${viewMode==='grid'?'bg-white shadow text-rose-600':'text-slate-400'}`} title="Modo Mosaico">🧱</button>
              </div>
-
              <button onClick={() => {const n = prompt("Nombre:"); if(n) supabase.from('folders').insert([{name:n, parent_id:folderId?parseInt(folderId):null}]).then(()=>onRefresh())}} className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-[10px] uppercase shadow-sm">+ CARPETA</button>
              <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
              <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-lg hover:scale-105 transition-all">{allItemsInFolder.length > 0 ? `SUBIR VERSIÓN ${Math.max(...availableVersions, 0) + 1}` : "SUBIR FOLLETOS"}</button>
@@ -235,7 +201,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                           <td className="px-4 py-6 align-top"><p className="italic font-black text-slate-700 text-sm uppercase tracking-tighter pr-4">{p.name}</p></td>
                           <td className="pl-12 py-6 align-top">
                             <div className="flex flex-col gap-2">
-                               {pendingCount > 0 ? (
+                               {/* --- LÓGICA DE ETIQUETAS EN LISTA --- */}
+                               {p.is_approved ? (
+                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
+                               ) : pendingCount > 0 ? (
                                  <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>
                                ) : myComments.length > 0 ? (
                                  <div className="text-[11px] font-black text-emerald-600 uppercase tracking-widest mb-1 bg-emerald-100 w-fit px-3 py-1.5 rounded-full border border-emerald-200 shadow-sm">✓ TODO HECHO</div>
@@ -259,8 +228,15 @@ const Dashboard = ({ projects = [], folders = [], onRefresh }: any) => {
                      return (
                       <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                         <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                          {pendingCount > 0 && <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>}
-                          {pendingCount === 0 && myComments.length > 0 && <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>}
+                          {/* --- ETIQUETAS EN MODO GRID --- */}
+                          {p.is_approved ? (
+                              <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>
+                          ) : pendingCount > 0 ? (
+                              <div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>
+                          ) : pendingCount === 0 && myComments.length > 0 && (
+                              <div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>
+                          )}
+                          
                           <button onClick={(e) => deleteProject(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>
                         </div>
                         <div className="p-6 flex flex-col gap-3"><h3 className="font-black italic text-slate-700 uppercase tracking-tight text-sm truncate">{p.name}</h3><button onClick={() => navigate(`/project/${p.id}`)} className="w-full py-3 bg-slate-50 text-rose-600 rounded-xl font-black text-[10px] uppercase hover:bg-rose-50 transition-colors">Revisar</button></div>
