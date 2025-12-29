@@ -158,7 +158,10 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
     if (currentItems.length === 0) return null;
     const p = currentItems[pageIndex];
     if (!p) return null;
-    const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+
+    // --- CORRECCIÓN 1: FILTRAR BORRADOS ---
+    const myComments = comments.filter(c => String(c.page_id) === String(p.id) && !c.deleted_at);
+    
     const pendingCount = myComments.filter(c => !c.resolved).length;
     const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
 
@@ -283,7 +286,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                   </thead>
                   <tbody>
                     {currentItems.map((p: any) => {
-                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                      // --- CORRECCIÓN 2: FILTRAR BORRADOS ---
+                      const myComments = comments.filter(c => String(c.page_id) === String(p.id) && !c.deleted_at);
+                      
                       const pendingCount = myComments.filter(c => !c.resolved).length;
                       const resolvedCount = myComments.filter(c => c.resolved).length;
                       const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
@@ -317,7 +322,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
             ) : (
               <div className="grid grid-cols-4 gap-8">
                   {currentItems.map((p: any) => {
-                      const myComments = comments.filter(c => String(c.page_id) === String(p.id));
+                      // --- CORRECCIÓN 3: FILTRAR BORRADOS ---
+                      const myComments = comments.filter(c => String(c.page_id) === String(p.id) && !c.deleted_at);
+
                       const pendingCount = myComments.filter(c => !c.resolved).length;
                       const resolvedCount = myComments.filter(c => c.resolved).length;
                       const isDeadlinePassed = p.correction_deadline && new Date() > new Date(p.correction_deadline);
