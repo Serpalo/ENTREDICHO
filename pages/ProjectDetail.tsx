@@ -56,12 +56,13 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   // --- BLOQUEO GENERAL ---
   const isLocked = isPageApproved || isDeadlinePassed;
 
-  // 2. NAVEGACIÓN HERMANOS
+  // 2. NAVEGACIÓN HERMANOS (CORREGIDO EL ORDEN NUMÉRICO)
   const siblings = useMemo(() => {
     if (!project) return [];
     return projects
       .filter((p: any) => p.parent_id === project.parent_id && p.version === project.version)
-      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+      // AQUÍ ESTÁ EL CAMBIO: { numeric: true } hace que el 2 vaya antes que el 10
+      .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   }, [projects, project]);
 
   const currentIndex = siblings.findIndex((p: any) => String(p.id) === String(projectId));
@@ -74,7 +75,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
     const myVersionSiblings = folderProjects
         .filter((p: any) => p.version === project.version)
-        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); // También corregido aquí
     const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
     if (myPositionIndex === -1) return [];
 
@@ -86,7 +87,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     for (const v of availableVersions) {
         const versionSiblings = folderProjects
             .filter((p: any) => p.version === v)
-            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+            .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); // Y aquí
         if (versionSiblings[myPositionIndex]) {
             matches.push(versionSiblings[myPositionIndex]);
         }
@@ -317,13 +318,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         let finalX = newCoords?.x || null;
         let finalY = newCoords?.y || null;
 
-        // Si no hay click, pero hay dibujo, calculamos el punto de inicio del dibujo para poner el número
         if ((finalX === null || finalY === null) && tempDrawings.length > 0) {
-            // Buscamos el primer comando "M x y" del path
             const firstPath = tempDrawings[0].path; 
             const parts = firstPath.trim().split(' ');
             if (parts.length >= 3 && parts[0] === 'M') {
-                // El path guarda 0-100, la BD espera 0-1. Dividimos por 100.
                 finalX = parseFloat(parts[1]) / 100;
                 finalY = parseFloat(parts[2]) / 100;
             }
