@@ -23,12 +23,20 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const navigate = useNavigate();
   const { projectId } = useParams();
   
-  // DATOS
+  // DATOS PRINCIPALES
   const [corrections, setCorrections] = useState<any[]>([]);
+  const [replies, setReplies] = useState<any[]>([]); // <--- NUEVO: ESTADO PARA RESPUESTAS
+  
+  // DATOS DE ENTRADA
   const [newNote, setNewNote] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   
+  // ESTADOS PARA RESPONDER (HILOS)
+  const [replyingTo, setReplyingTo] = useState<string | null>(null); // ID del comentario al que respondes
+  const [replyText, setReplyText] = useState(""); // Texto de la respuesta
+  const [sendingReply, setSendingReply] = useState(false);
+
   // ESTADO DE APROBACIÓN LOCAL
   const [isPageApproved, setIsPageApproved] = useState(false);
 
@@ -119,13 +127,33 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS ---
-  const loadCorrections = async () => {
+  // --- CARGA DE DATOS (COMENTARIOS + RESPUESTAS) ---
+  const loadData = async () => {
     if (!projectId) return;
-    // CARGAMOS TODOS LOS COMENTARIOS (INCLUIDOS LOS BORRADOS PARA FILTRARLOS LUEGO)
-    const { data, error } = await supabase.from('comments').select('*').eq('page_id', projectId).order('created_at', { ascending: true });
-    if (error) console.error("Error cargando notas:", error); 
-    setCorrections(data || []);
+    
+    // 1. Cargar Comentarios
+    const { data: commentsData, error: commentsError } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('page_id', projectId)
+        .order('created_at', { ascending: true });
+    
+    if (commentsError) console.error("Error cargando notas:", commentsError); 
+    setCorrections(commentsData || []);
+
+    // 2. Cargar Respuestas (Si hay comentarios)
+    if (commentsData && commentsData.length > 0) {
+        const commentIds = commentsData.map((c: any) => c.id);
+        const { data: repliesData } = await supabase
+            .from('comment_replies')
+            .select('*')
+            .in('comment_id', commentIds)
+            .order('created_at', { ascending: true });
+        
+        setReplies(repliesData || []);
+    } else {
+        setReplies([]);
+    }
   };
 
   const loadProjectStatus = async () => {
@@ -133,26 +161,64 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   }
 
   useEffect(() => { 
-      loadCorrections(); loadProjectStatus();
-      const commentsChannel = supabase.channel('custom-all-channel').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadCorrections()).subscribe();
-      const projectChannel = supabase.channel('project-status-channel').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); } }).subscribe();
-      return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(projectChannel); }
+      loadData(); 
+      loadProjectStatus();
+      
+      // SUSCRIPCIONES EN TIEMPO REAL
+      const commentsChannel = supabase.channel('realtime-comments')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData())
+        .subscribe();
+      
+      const repliesChannel = supabase.channel('realtime-replies')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData())
+        .subscribe();
+
+      const projectChannel = supabase.channel('project-status-channel')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); } })
+        .subscribe();
+      
+      return () => { 
+          supabase.removeChannel(commentsChannel); 
+          supabase.removeChannel(repliesChannel);
+          supabase.removeChannel(projectChannel); 
+      }
   }, [projectId]);
 
   const togglePageApproval = async () => {
-      // SOLO EL ADMIN PUEDE CAMBIAR EL ESTADO
       if (userRole !== 'admin') return alert("Solo el administrador puede aprobar o reabrir páginas.");
-      
       const newState = !isPageApproved; setIsPageApproved(newState); const { error } = await supabase.from('projects').update({ is_approved: newState }).eq('id', projectId); if (error) { alert("Error al actualizar estado"); setIsPageApproved(!newState); } if (onRefresh) onRefresh();
   };
 
   const handleDownloadPDF = () => {
-    // FILTRAMOS LOS BORRADOS PARA EL PDF (NO DEBEN SALIR)
     const activeCorrections = corrections.filter(c => !c.deleted_at);
-
     const doc = new jsPDF(); const title = project ? `Correcciones: ${project.name}` : "Correcciones"; doc.setFontSize(16); doc.setTextColor(225, 29, 72); doc.text(title, 10, 15); if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); } else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); } doc.setFontSize(10); doc.setTextColor(100); doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22); doc.setLineWidth(0.5); doc.line(10, 25, 200, 25); let yPosition = 35; 
     
-    activeCorrections.forEach((c, index) => { if (yPosition > 270) { doc.addPage(); yPosition = 20; } let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 10; doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); }); doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
+    activeCorrections.forEach((c, index) => { 
+        if (yPosition > 270) { doc.addPage(); yPosition = 20; } 
+        let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } 
+        doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); 
+        const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 5; 
+        
+        // AÑADIR RESPUESTAS AL PDF
+        const myReplies = replies.filter(r => r.comment_id === c.id);
+        if (myReplies.length > 0) {
+            myReplies.forEach(r => {
+                if (yPosition > 280) { doc.addPage(); yPosition = 20; }
+                doc.setTextColor(100);
+                doc.setFontSize(8);
+                const replyTitle = `↳ Respuesta (${r.user_email || 'Anónimo'}):`;
+                doc.text(replyTitle, 20, yPosition);
+                yPosition += 4;
+                const replyContent = doc.splitTextToSize(r.content, 170);
+                doc.text(replyContent, 20, yPosition);
+                yPosition += (replyContent.length * 4) + 2;
+            });
+            yPosition += 5;
+        }
+
+        doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); 
+    }); 
+    doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
   };
 
   const handleSliderMove = (e: any) => {
@@ -251,6 +317,28 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
 
+  // --- FUNCIÓN PARA ENVIAR RESPUESTA ---
+  const handleSendReply = async (commentId: string) => {
+      if (!replyText.trim()) return;
+      setSendingReply(true);
+      const user = session?.user?.email || 'Anónimo';
+      
+      const { error } = await supabase.from('comment_replies').insert({
+          comment_id: commentId,
+          content: replyText,
+          user_email: user
+      });
+
+      if (error) {
+          alert("Error al enviar respuesta: " + error.message);
+      } else {
+          setReplyText("");
+          setReplyingTo(null);
+          loadData(); // Recargamos para ver la respuesta al momento
+      }
+      setSendingReply(false);
+  };
+
   const toggleCheck = async (id: string, currentResolved: boolean) => { 
       setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
       await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
@@ -259,12 +347,9 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   // --- BORRADO SUAVE (SOFT DELETE) ---
   const deleteComment = async (id: string) => { 
       if (window.confirm("¿Seguro que quieres borrar esta nota?")) { 
-          // 1. Ocultar visualmente de inmediato para que parezca borrado
-          // Pero si es admin, luego al refrescarse lo verá "borrado"
           const currentUser = session?.user?.email || "usuario_desconocido";
           const timestamp = new Date().toISOString();
 
-          // 2. Actualizamos la BBDD marcándolo como borrado
           const { error } = await supabase
             .from('comments')
             .update({ 
@@ -276,8 +361,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
           if (error) {
               alert("Error al borrar: " + error.message);
           } else {
-              // Recargar correcciones para actualizar la vista
-              loadCorrections();
+              loadData();
           }
       } 
   };
@@ -296,12 +380,9 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return { color: finalColor, width: strokeWidth, opacity }; 
   };
 
-  // --- FILTRADO DE COMENTARIOS A MOSTRAR ---
-  // Si eres admin: Ves TODO (activos + borrados)
-  // Si eres usuario: Ves SOLO los activos (deleted_at == null)
   const visibleCorrections = corrections.filter(c => {
-      if (userRole === 'admin') return true; // El admin lo ve todo
-      return !c.deleted_at; // El usuario solo ve lo no borrado
+      if (userRole === 'admin') return true; 
+      return !c.deleted_at; 
   });
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
@@ -459,61 +540,108 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
                 {visibleCorrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones visibles</div>}
                 
-                {visibleCorrections.map((c, i) => (
-                  <div 
-                    key={c.id} 
-                    onMouseEnter={() => !c.deleted_at && setHoveredId(c.id)} 
-                    onMouseLeave={() => setHoveredId(null)} 
-                    className={`p-4 rounded-2xl border-2 transition-all 
-                        ${c.deleted_at ? 'bg-slate-50 border-slate-200 opacity-70 grayscale' : (c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200'))} 
-                        ${hoveredId===c.id && !c.deleted_at ? 'scale-[1.02] shadow-md':''}`}
-                  >
-                    <div className="flex gap-3 items-start">
-                      {!c.deleted_at && (
-                          <button 
-                            onClick={() => toggleCheck(c.id, c.resolved)} 
-                            className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                                ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
-                          >
-                              {c.resolved && "✓"}
-                          </button>
-                      )}
-                      {c.deleted_at && <span className="text-xl">🗑️</span>}
-                      
-                      <div className="flex-1">
-                        <div className="flex justify-between">
-                            <span className={`text-[9px] font-black uppercase ${c.deleted_at ? 'text-slate-400 line-through' : (c.is_general ? 'text-blue-400' : 'text-purple-300')}`}>#{i+1} {c.is_general && "GENERAL"}</span>
-                            <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        
-                        {/* EMAIL DEL USUARIO */}
-                        <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">
-                            👤 {c.user_email || 'Anónimo'}
-                        </span>
-
-                        <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>
-                            {c.content}
-                        </p>
-                        
-                        {/* AVISO DE BORRADO (SOLO ADMIN LO VE) */}
-                        {c.deleted_at && (
-                            <div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">
-                                ❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>
-                                📅 {new Date(c.deleted_at).toLocaleString()}
-                            </div>
+                {visibleCorrections.map((c, i) => {
+                  const myReplies = replies.filter(r => r.comment_id === c.id);
+                  return (
+                    <div 
+                        key={c.id} 
+                        onMouseEnter={() => !c.deleted_at && setHoveredId(c.id)} 
+                        onMouseLeave={() => setHoveredId(null)} 
+                        className={`p-4 rounded-2xl border-2 transition-all 
+                            ${c.deleted_at ? 'bg-slate-50 border-slate-200 opacity-70 grayscale' : (c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200'))} 
+                            ${hoveredId===c.id && !c.deleted_at ? 'scale-[1.02] shadow-md':''}`}
+                    >
+                        <div className="flex gap-3 items-start">
+                        {!c.deleted_at && (
+                            <button 
+                                onClick={() => toggleCheck(c.id, c.resolved)} 
+                                className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
+                                    ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
+                            >
+                                {c.resolved && "✓"}
+                            </button>
                         )}
+                        {c.deleted_at && <span className="text-xl">🗑️</span>}
                         
-                        <div className="flex flex-wrap gap-2 mt-2 items-center">
-                          {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
-                        </div>
+                        <div className="flex-1">
+                            <div className="flex justify-between">
+                                <span className={`text-[9px] font-black uppercase ${c.deleted_at ? 'text-slate-400 line-through' : (c.is_general ? 'text-blue-400' : 'text-purple-300')}`}>#{i+1} {c.is_general && "GENERAL"}</span>
+                                <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            
+                            {/* EMAIL DEL USUARIO */}
+                            <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">
+                                👤 {c.user_email || 'Anónimo'}
+                            </span>
 
-                        <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50">
-                           {!isLocked && !c.deleted_at && <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>}
+                            <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>
+                                {c.content}
+                            </p>
+                            
+                            {/* AVISO DE BORRADO (SOLO ADMIN LO VE) */}
+                            {c.deleted_at && (
+                                <div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">
+                                    ❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>
+                                    📅 {new Date(c.deleted_at).toLocaleString()}
+                                </div>
+                            )}
+                            
+                            <div className="flex flex-wrap gap-2 mt-2 items-center">
+                            {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
+                            </div>
+
+                            {/* --- HILO DE RESPUESTAS (NUEVO) --- */}
+                            {!c.deleted_at && (
+                                <div className="mt-4 flex flex-col gap-2">
+                                    {myReplies.map(r => (
+                                        <div key={r.id} className="bg-slate-100 p-2 rounded-lg border border-slate-200 ml-2 relative">
+                                            <div className="absolute -left-2 top-3 w-2 h-[1px] bg-slate-300"></div>
+                                            <div className="flex justify-between items-baseline mb-1">
+                                                <span className="text-[8px] font-black text-slate-500 uppercase">{r.user_email || 'Anónimo'}</span>
+                                                <span className="text-[7px] text-slate-400">{new Date(r.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', day: 'numeric', month:'numeric'})}</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-700 font-medium leading-snug">{r.content}</p>
+                                        </div>
+                                    ))}
+
+                                    {/* FORMULARIO DE RESPUESTA */}
+                                    {replyingTo === c.id ? (
+                                        <div className="ml-2 mt-2 bg-white border border-slate-200 p-2 rounded-lg shadow-sm animate-fadeIn">
+                                            <textarea 
+                                                autoFocus
+                                                value={replyText}
+                                                onChange={(e) => setReplyText(e.target.value)}
+                                                placeholder="Escribe una respuesta..."
+                                                className="w-full text-xs p-2 border border-slate-200 rounded-md focus:outline-none focus:border-rose-400 resize-none h-16 bg-slate-50"
+                                            />
+                                            <div className="flex justify-end gap-2 mt-2">
+                                                <button onClick={() => setReplyingTo(null)} className="text-[9px] font-bold text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
+                                                <button onClick={() => handleSendReply(c.id)} disabled={sendingReply || !replyText.trim()} className="bg-rose-600 text-white text-[9px] font-bold px-3 py-1 rounded uppercase hover:bg-rose-700 disabled:opacity-50">
+                                                    {sendingReply ? "Enviando..." : "Responder"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            )}
+
+                            <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50 gap-3">
+                                {!isLocked && !c.deleted_at && (
+                                    <>
+                                        <button onClick={() => { setReplyingTo(c.id); setReplyText(""); }} className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 flex items-center gap-1">
+                                            💬 Responder
+                                        </button>
+                                        <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>
+                                            Borrar
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                      </div>
+                        </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
         )}
