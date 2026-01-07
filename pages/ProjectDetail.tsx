@@ -61,7 +61,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     if (!project) return [];
     return projects
       .filter((p: any) => p.parent_id === project.parent_id && p.version === project.version)
-      // AQUÍ ESTÁ EL CAMBIO: { numeric: true } hace que el 2 vaya antes que el 10
       .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   }, [projects, project]);
 
@@ -75,7 +74,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     const folderProjects = projects.filter((p: any) => p.parent_id === project.parent_id);
     const myVersionSiblings = folderProjects
         .filter((p: any) => p.version === project.version)
-        .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); // También corregido aquí
+        .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     const myPositionIndex = myVersionSiblings.findIndex((p: any) => String(p.id) === String(project.id));
     if (myPositionIndex === -1) return [];
 
@@ -87,7 +86,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     for (const v of availableVersions) {
         const versionSiblings = folderProjects
             .filter((p: any) => p.version === v)
-            .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })); // Y aquí
+            .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
         if (versionSiblings[myPositionIndex]) {
             matches.push(versionSiblings[myPositionIndex]);
         }
@@ -128,11 +127,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS (COMENTARIOS + RESPUESTAS) ---
+  // --- CARGA DE DATOS ---
   const loadData = async () => {
     if (!projectId) return;
     
-    // 1. Cargar Comentarios
     const { data: commentsData, error: commentsError } = await supabase
         .from('comments')
         .select('*')
@@ -142,7 +140,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     if (commentsError) console.error("Error cargando notas:", commentsError); 
     setCorrections(commentsData || []);
 
-    // 2. Cargar Respuestas (Si hay comentarios)
     if (commentsData && commentsData.length > 0) {
         const commentIds = commentsData.map((c: any) => c.id);
         const { data: repliesData } = await supabase
@@ -314,7 +311,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; 
         const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
         
-        // --- LÓGICA INTELIGENTE PARA COORDENADAS ---
         let finalX = newCoords?.x || null;
         let finalY = newCoords?.y || null;
 
@@ -352,7 +348,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     }
   };
 
-  // --- FUNCIÓN PARA ENVIAR RESPUESTA ---
   const handleSendReply = async (commentId: string) => {
       if (!replyText.trim()) return;
       setSendingReply(true);
@@ -379,7 +374,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
   };
 
-  // --- BORRADO SUAVE (SOFT DELETE) ---
   const deleteComment = async (id: string) => { 
       if (window.confirm("¿Seguro que quieres borrar esta nota?")) { 
           const currentUser = session?.user?.email || "usuario_desconocido";
@@ -401,11 +395,13 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       } 
   };
   
-  const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean) => { 
+  // MODIFICADO: Acepta 'isResolved' para cambiar el color si está resuelta
+  const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean, isResolved: boolean) => { 
       const isHighlighter = tool === 'highlighter'; 
       let strokeWidth = isHighlighter ? "2" : "1";
       let opacity = isHighlighter ? "0.5" : "1";
-      let finalColor = color;
+      // Si está resuelta = VERDE (#10b981), si no = COLOR ORIGINAL
+      let finalColor = isResolved ? '#10b981' : color;
 
       if (isHighlighter && isHovered) { strokeWidth = "4"; opacity = "0.8"; }
       if ((tool === 'pen' || tool === 'arrow' || tool === 'rect') && isHovered) { 
@@ -424,7 +420,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
-      {/* HEADER */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
           <button onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors">← VOLVER</button>
@@ -468,7 +463,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* ZONA CENTRAL - IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {!isComparing && prevProject && (<button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>)}
             
@@ -498,23 +492,26 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            {visibleCorrections.map((c, index) => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
+                            {/* DIBUJOS: Se muestran SIEMPRE (quitado !c.resolved) pero cambiamos color si está resuelta */}
+                            {visibleCorrections.map((c, index) => c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
                                     const isHovered = hoveredId === c.id; 
                                     const tool = c.drawing_tool || 'pen';
-                                    const color = c.color || '#ef4444'; // Usamos el color guardado SOLO para el dibujo
-                                    const style = getStrokeStyle(tool as DrawingTool, color, isHovered);
+                                    const color = c.color || '#ef4444'; 
+                                    // Pasa c.resolved para que getStrokeStyle ponga verde si es true
+                                    const style = getStrokeStyle(tool as DrawingTool, color, isHovered, c.resolved);
                                     return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                                 })))}
-                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
-                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false).width} opacity={getStrokeStyle(activeTool, activeColor, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
+                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false, false).width} opacity={getStrokeStyle(activeTool, activeColor, false, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
                         
-                        {/* PUNTO DE COORDENADAS NUMERADO */}
-                        {visibleCorrections.map((c, index) => !c.resolved && c.x!=null && (
+                        {/* PUNTOS NUMERADOS: Se muestran SIEMPRE (quitado !c.resolved) */}
+                        {visibleCorrections.map((c, index) => c.x!=null && (
                             <div 
                                 key={c.id} 
                                 className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} 
-                                style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}
+                                // Si está resuelto -> VERDE (#10b981), si no -> SU COLOR
+                                style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.resolved ? '#10b981' : (c.color || '#ef4444')}}
                             >
                                 <span className="text-white text-[10px] font-bold">{index + 1}</span>
                             </div>
@@ -528,7 +525,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
             {!isComparing && nextProject && (<button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>)}
         </div>
 
-        {/* SIDEBAR DERECHA */}
+        {/* SIDEBAR DERECHA (SIN CAMBIOS) */}
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
               {isLocked ? (
