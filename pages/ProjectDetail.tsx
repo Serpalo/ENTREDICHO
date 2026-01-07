@@ -25,7 +25,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   
   // DATOS PRINCIPALES
   const [corrections, setCorrections] = useState<any[]>([]);
-  const [replies, setReplies] = useState<any[]>([]); // <--- NUEVO: ESTADO PARA RESPUESTAS
+  const [replies, setReplies] = useState<any[]>([]); 
   
   // DATOS DE ENTRADA
   const [newNote, setNewNote] = useState("");
@@ -33,8 +33,8 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [loading, setLoading] = useState(false);
   
   // ESTADOS PARA RESPONDER (HILOS)
-  const [replyingTo, setReplyingTo] = useState<string | null>(null); // ID del comentario al que respondes
-  const [replyText, setReplyText] = useState(""); // Texto de la respuesta
+  const [replyingTo, setReplyingTo] = useState<string | null>(null); 
+  const [replyText, setReplyText] = useState(""); 
   const [sendingReply, setSendingReply] = useState(false);
 
   // ESTADO DE APROBACIÓN LOCAL
@@ -164,7 +164,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       loadData(); 
       loadProjectStatus();
       
-      // SUSCRIPCIONES EN TIEMPO REAL
       const commentsChannel = supabase.channel('realtime-comments')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData())
         .subscribe();
@@ -199,7 +198,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); 
         const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 5; 
         
-        // AÑADIR RESPUESTAS AL PDF
         const myReplies = replies.filter(r => r.comment_id === c.id);
         if (myReplies.length > 0) {
             myReplies.forEach(r => {
@@ -298,23 +296,62 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); setStartPoint(null); };
 
   const handleAddNote = async (isGeneral = false) => {
-    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); let fileUrl = ""; try { if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
+    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); 
+    setLoading(true); 
     
-    // GUARDAMOS EL EMAIL DEL USUARIO (session.user.email)
-    const { error: insertError } = await supabase.from('comments').insert([{ 
-        page_id: projectId, 
-        content: newNote, 
-        attachment_url: fileUrl, 
-        resolved: false, 
-        is_general: isGeneral, 
-        x: newCoords?.x || null, 
-        y: newCoords?.y || null, 
-        drawing_data: drawingDataString, 
-        drawing_tool: usedTool,
-        color: activeColor,
-        user_email: session?.user?.email || 'Anónimo'
-    }]); 
-    if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
+    let fileUrl = ""; 
+    try { 
+        if (selectedFile) { 
+            const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); 
+            const fileName = `adjunto-${Date.now()}-${sanitizedName}`; 
+            const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); 
+            if (uploadError) throw uploadError; 
+            const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); 
+            fileUrl = data.publicUrl; 
+        } 
+        
+        const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; 
+        const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
+        
+        // --- LÓGICA INTELIGENTE PARA COORDENADAS ---
+        let finalX = newCoords?.x || null;
+        let finalY = newCoords?.y || null;
+
+        // Si no hay click, pero hay dibujo, calculamos el punto de inicio del dibujo para poner el número
+        if ((finalX === null || finalY === null) && tempDrawings.length > 0) {
+            // Buscamos el primer comando "M x y" del path
+            const firstPath = tempDrawings[0].path; 
+            const parts = firstPath.trim().split(' ');
+            if (parts.length >= 3 && parts[0] === 'M') {
+                // El path guarda 0-100, la BD espera 0-1. Dividimos por 100.
+                finalX = parseFloat(parts[1]) / 100;
+                finalY = parseFloat(parts[2]) / 100;
+            }
+        }
+
+        const { error: insertError } = await supabase.from('comments').insert([{ 
+            page_id: projectId, 
+            content: newNote, 
+            attachment_url: fileUrl, 
+            resolved: false, 
+            is_general: isGeneral, 
+            x: finalX, 
+            y: finalY, 
+            drawing_data: drawingDataString, 
+            drawing_tool: usedTool,
+            color: activeColor,
+            user_email: session?.user?.email || 'Anónimo'
+        }]); 
+        
+        if (insertError) alert("Error al guardar: " + insertError.message); 
+        else { 
+            setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); 
+        } 
+    } catch (err: any) { 
+        alert("Error: " + err.message); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   // --- FUNCIÓN PARA ENVIAR RESPUESTA ---
@@ -334,7 +371,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       } else {
           setReplyText("");
           setReplyingTo(null);
-          loadData(); // Recargamos para ver la respuesta al momento
+          loadData(); 
       }
       setSendingReply(false);
   };
@@ -463,7 +500,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            {visibleCorrections.map(c => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
+                            {visibleCorrections.map((c, index) => !c.resolved && c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
                                     const isHovered = hoveredId === c.id; 
                                     const tool = c.drawing_tool || 'pen';
                                     const color = c.color || '#ef4444'; // Usamos el color guardado SOLO para el dibujo
@@ -474,8 +511,16 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                             {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false).width} opacity={getStrokeStyle(activeTool, activeColor, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
                         
-                        {/* PUNTO DE COORDENADAS */}
-                        {visibleCorrections.map(c => !c.resolved && c.x!=null && !c.drawing_data && (<div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>))}
+                        {/* PUNTO DE COORDENADAS NUMERADO */}
+                        {visibleCorrections.map((c, index) => !c.resolved && c.x!=null && (
+                            <div 
+                                key={c.id} 
+                                className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} 
+                                style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.color || '#ef4444'}}
+                            >
+                                <span className="text-white text-[10px] font-bold">{index + 1}</span>
+                            </div>
+                        ))}
                         
                         {newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
                       </>
@@ -590,7 +635,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                             {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                             </div>
 
-                            {/* --- HILO DE RESPUESTAS (NUEVO) --- */}
+                            {/* --- HILO DE RESPUESTAS --- */}
                             {!c.deleted_at && (
                                 <div className="mt-4 flex flex-col gap-2">
                                     {myReplies.map(r => (
