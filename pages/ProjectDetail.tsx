@@ -16,9 +16,24 @@ const COLORS = [
     { name: 'Rosa', hex: '#db2777' }
 ];
 
-declare const emailjs: any; // Declaración para TypeScript
+declare const emailjs: any; 
 
-// RECIBIMOS userRole Y session DEL PADRE (APP.TSX)
+// --- FUNCIÓN AUXILIAR PARA GENERAR COLOR DESDE EL EMAIL ---
+const stringToColor = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+    return '#' + '00000'.substring(0, 6 - c.length) + c;
+};
+
+// --- FUNCIÓN PARA OBTENER INICIALES ---
+const getInitials = (email: string) => {
+    if (!email) return "?";
+    return email.substring(0, 2).toUpperCase();
+};
+
 const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => {
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -26,6 +41,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   // DATOS PRINCIPALES
   const [corrections, setCorrections] = useState<any[]>([]);
   const [replies, setReplies] = useState<any[]>([]); 
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   
   // DATOS DE ENTRADA
   const [newNote, setNewNote] = useState("");
@@ -56,7 +72,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   // --- BLOQUEO GENERAL ---
   const isLocked = isPageApproved || isDeadlinePassed;
 
-  // 2. NAVEGACIÓN HERMANOS (CORREGIDO EL ORDEN NUMÉRICO)
+  // 2. NAVEGACIÓN HERMANOS
   const siblings = useMemo(() => {
     if (!project) return [];
     return projects
@@ -157,6 +173,39 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const loadProjectStatus = async () => {
       if (!projectId) return; const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single(); if (data) setIsPageApproved(data.is_approved);
   }
+
+  // --- GESTIÓN DE PRESENCIA (ONLINE USERS) ---
+  useEffect(() => {
+    if (!projectId || !session?.user?.email) return;
+
+    const roomChannel = supabase.channel(`room-${projectId}`, {
+        config: {
+            presence: {
+                key: session.user.email,
+            },
+        },
+    });
+
+    roomChannel
+        .on('presence', { event: 'sync' }, () => {
+            const newState = roomChannel.presenceState();
+            const users = Object.keys(newState);
+            setOnlineUsers(users);
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await roomChannel.track({
+                    user: session.user.email,
+                    online_at: new Date().toISOString(),
+                });
+            }
+        });
+
+    return () => {
+        supabase.removeChannel(roomChannel);
+    };
+  }, [projectId, session]);
+
 
   useEffect(() => { 
       loadData(); 
@@ -395,12 +444,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       } 
   };
   
-  // MODIFICADO: Acepta 'isResolved' para cambiar el color si está resuelta
   const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean, isResolved: boolean) => { 
       const isHighlighter = tool === 'highlighter'; 
       let strokeWidth = isHighlighter ? "2" : "1";
       let opacity = isHighlighter ? "0.5" : "1";
-      // Si está resuelta = VERDE (#10b981), si no = COLOR ORIGINAL
       let finalColor = isResolved ? '#10b981' : color;
 
       if (isHighlighter && isHovered) { strokeWidth = "4"; opacity = "0.8"; }
@@ -420,13 +467,34 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
 
   return (
     <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
+      {/* HEADER */}
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
           <button onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors">← VOLVER</button>
-          <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md">{project.name}</h2>
+          
+          {/* --- BRANDING HEADER --- */}
+          <span className="text-xl font-black italic tracking-tighter text-slate-800 uppercase mr-4">DocCheck</span>
+          
+          <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md border-l border-slate-300 pl-4">{project.name}</h2>
         </div>
         
         <div className="flex gap-4 items-center">
+            
+            {onlineUsers.length > 0 && (
+                <div className="flex -space-x-2 mr-2">
+                    {onlineUsers.map((user, index) => (
+                        <div 
+                            key={index} 
+                            className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm"
+                            style={{ backgroundColor: stringToColor(user) }}
+                            title={user}
+                        >
+                            {getInitials(user)}
+                        </div>
+                    ))}
+                </div>
+            )}
+
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
             {corrections.length > 0 && (<button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"><span>📄 PDF DE CORRECCIONES</span></button>)}
             
@@ -463,6 +531,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       </div>
 
       <div className="flex-1 flex overflow-hidden">
+        {/* ZONA CENTRAL - IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {!isComparing && prevProject && (<button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>)}
             
@@ -492,12 +561,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                   {!hideMarkers && (
                       <>
                         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            {/* DIBUJOS: Se muestran SIEMPRE (quitado !c.resolved) pero cambiamos color si está resuelta */}
                             {visibleCorrections.map((c, index) => c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
                                     const isHovered = hoveredId === c.id; 
                                     const tool = c.drawing_tool || 'pen';
                                     const color = c.color || '#ef4444'; 
-                                    // Pasa c.resolved para que getStrokeStyle ponga verde si es true
                                     const style = getStrokeStyle(tool as DrawingTool, color, isHovered, c.resolved);
                                     return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                                 })))}
@@ -505,12 +572,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                             {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false, false).width} opacity={getStrokeStyle(activeTool, activeColor, false, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
                         </svg>
                         
-                        {/* PUNTOS NUMERADOS: Se muestran SIEMPRE (quitado !c.resolved) */}
                         {visibleCorrections.map((c, index) => c.x!=null && (
                             <div 
                                 key={c.id} 
                                 className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} 
-                                // Si está resuelto -> VERDE (#10b981), si no -> SU COLOR
                                 style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.resolved ? '#10b981' : (c.color || '#ef4444')}}
                             >
                                 <span className="text-white text-[10px] font-bold">{index + 1}</span>
@@ -525,7 +590,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
             {!isComparing && nextProject && (<button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>)}
         </div>
 
-        {/* SIDEBAR DERECHA (SIN CAMBIOS) */}
+        {/* SIDEBAR DERECHA */}
         {!isComparing && (
             <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
               {isLocked ? (
