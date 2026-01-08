@@ -632,7 +632,18 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                         <div className="flex gap-2 mt-1">
                             <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                             <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}><span>📎</span>{selectedFile ? "LISTO" : "ADJUNTAR"}</label>
-                            {/* El botón de guardar SÍ puede ser del color elegido para dar feedback visual de qué color estás usando */}
+                            
+                            {/* --- BOTONES DE GUARDAR/BORRAR ACTUALIZADOS --- */}
+                            {tempDrawings.length > 0 && (
+                                <button 
+                                    onClick={() => setTempDrawings(prev => prev.slice(0, -1))} 
+                                    className="px-3 py-3 bg-slate-200 text-slate-500 rounded-lg font-bold text-[10px] hover:bg-slate-300" 
+                                    title="Deshacer último trazo"
+                                >
+                                    ↩
+                                </button>
+                            )}
+                            
                             <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`} style={{ backgroundColor: loading ? undefined : activeColor }}>{loading ? "..." : "GUARDAR"}</button>
                         </div>
                         <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">MODIFICACIÓN GENERAL</button>
