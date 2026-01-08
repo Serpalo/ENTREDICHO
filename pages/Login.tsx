@@ -47,10 +47,11 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4 font-sans">
       <div className="bg-white p-10 rounded-3xl shadow-xl w-full max-w-md text-center border border-slate-200">
         
-        <img src="/logo.png" alt="Logo" className="h-12 mx-auto mb-8 object-contain" />
+        {/* --- BRANDING DOCCHECK --- */}
+        <img src="/logo.png" alt="Logo" className="h-12 mx-auto mb-6 object-contain" />
         
-        <h1 className="text-2xl font-black text-slate-800 uppercase italic mb-2">Acceso Correcciones</h1>
-        <p className="text-sm text-slate-400 mb-8 font-bold">Introduce tu email corporativo para acceder.</p>
+        <h1 className="text-4xl font-black text-slate-800 uppercase italic tracking-tighter mb-2">DocCheck</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-8">Plataforma de Revisión</p>
         
         {/* Si hay mensaje de ÉXITO, mostramos solo esto */}
         {message ? (
