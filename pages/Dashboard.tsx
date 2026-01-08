@@ -191,12 +191,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <div className="w-64 bg-white border-r border-slate-200 p-8 flex flex-col gap-8">
         
-        {/* --- BRANDING SIDEBAR (AQUÍ ESTÁ EL CAMBIO) --- */}
-        <div className="flex items-center gap-3 mb-2">
-            <img src="/logo.png" alt="Logo" className="h-8 w-fit object-contain" />
-            <span className="text-xl font-black italic tracking-tighter text-slate-800 uppercase">
-                DocCheck
-            </span>
+        {/* --- BRANDING SIDEBAR (CORREGIDO: DEBAJO DEL LOGO) --- */}
+        <div className="flex flex-col gap-4">
+            <img src="/logo.png" alt="Logo" className="h-10 w-fit object-contain self-start" />
+            <div>
+              <h1 className="text-2xl font-black italic tracking-tighter text-slate-800 uppercase leading-none">DocCheck</h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Plataforma de Revisión</p>
+            </div>
         </div>
 
         {session && (
