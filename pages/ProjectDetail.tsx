@@ -59,6 +59,8 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
 
   // ESTADO DE APROBACIÓN LOCAL
   const [isPageApproved, setIsPageApproved] = useState(false);
+  // --- NUEVO: ESTADO PARA GUARDAR QUIÉN APROBÓ ---
+  const [approvedBy, setApprovedBy] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
@@ -126,7 +128,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [isMagnifierActive, setIsMagnifierActive] = useState(false);
   const [magnifierState, setMagnifierState] = useState({ x: 0, y: 0, show: false });
 
-  // AL CAMBIAR LA VERSIÓN A COMPARAR, CARGAMOS SUS COMENTARIOS
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
       setCompareTargetId(String(historicalVersions[0].id));
@@ -148,7 +149,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS ACTUALES ---
+  // --- CARGA DE DATOS ---
   const loadData = async () => {
     if (!projectId) return;
     
@@ -175,25 +176,13 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     }
   };
 
-  // --- CARGAR DATOS HISTÓRICOS (COMPARACIÓN) ---
   const loadHistoricalData = async (targetId: string) => {
       if (!targetId) return;
-      
-      const { data: hComments } = await supabase
-          .from('comments')
-          .select('*')
-          .eq('page_id', targetId)
-          .order('created_at', { ascending: true });
-      
+      const { data: hComments } = await supabase.from('comments').select('*').eq('page_id', targetId).order('created_at', { ascending: true });
       setHistoricalCorrections(hComments || []);
-
       if (hComments && hComments.length > 0) {
           const commentIds = hComments.map((c: any) => c.id);
-          const { data: hReplies } = await supabase
-              .from('comment_replies')
-              .select('*')
-              .in('comment_id', commentIds)
-              .order('created_at', { ascending: true });
+          const { data: hReplies } = await supabase.from('comment_replies').select('*').in('comment_id', commentIds).order('created_at', { ascending: true });
           setHistoricalReplies(hReplies || []);
       } else {
           setHistoricalReplies([]);
@@ -206,9 +195,18 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       }
   }, [isComparing, compareTargetId]);
 
-
+  // --- NUEVA CARGA DE ESTADO: Recuperamos también approved_by ---
   const loadProjectStatus = async () => {
-      if (!projectId) return; const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single(); if (data) setIsPageApproved(data.is_approved);
+      if (!projectId) return; 
+      const { data } = await supabase
+        .from('projects')
+        .select('is_approved, approved_by')
+        .eq('id', projectId)
+        .single(); 
+      if (data) {
+          setIsPageApproved(data.is_approved);
+          setApprovedBy(data.approved_by);
+      }
   }
 
   // --- GESTIÓN DE PRESENCIA ---
@@ -224,13 +222,47 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       loadProjectStatus();
       const commentsChannel = supabase.channel('realtime-comments').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData()).subscribe();
       const repliesChannel = supabase.channel('realtime-replies').on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData()).subscribe();
-      const projectChannel = supabase.channel('project-status-channel').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); } }).subscribe();
+      
+      // Escuchamos cambios en 'projects' para actualizar la aprobación en tiempo real
+      const projectChannel = supabase.channel('project-status-channel')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { 
+            if (payload.new) { 
+                setIsPageApproved(payload.new.is_approved);
+                setApprovedBy(payload.new.approved_by); 
+                if (onRefresh) onRefresh(); 
+            } 
+        })
+        .subscribe();
+      
       return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(repliesChannel); supabase.removeChannel(projectChannel); }
   }, [projectId]);
 
+  // --- FUNCIÓN DE APROBACIÓN ACTUALIZADA ---
   const togglePageApproval = async () => {
       if (userRole !== 'admin') return alert("Solo el administrador puede aprobar o reabrir páginas.");
-      const newState = !isPageApproved; setIsPageApproved(newState); const { error } = await supabase.from('projects').update({ is_approved: newState }).eq('id', projectId); if (error) { alert("Error al actualizar estado"); setIsPageApproved(!newState); } if (onRefresh) onRefresh();
+      
+      const newState = !isPageApproved; 
+      
+      // Si aprobamos, guardamos el email. Si desaprobamos, lo borramos (null).
+      const approverEmail = newState ? (session?.user?.email || 'Admin') : null;
+
+      setIsPageApproved(newState); 
+      setApprovedBy(approverEmail);
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ 
+            is_approved: newState,
+            approved_by: approverEmail // Guardamos quién lo hizo
+        })
+        .eq('id', projectId); 
+      
+      if (error) { 
+          alert("Error al actualizar estado: " + error.message); 
+          setIsPageApproved(!newState); 
+      } 
+      
+      if (onRefresh) onRefresh();
   };
 
   const handleDownloadPDF = () => {
@@ -255,29 +287,9 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
   };
 
-  const handleSliderMove = (e: any) => {
-    if (!imageContainerRef.current) return;
-    const rect = imageContainerRef.current.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    setSliderPosition((x / rect.width) * 100);
-  };
-
-  const getRelativeCoords = (e: any) => {
-    if (!imageContainerRef.current) return { x: 0, y: 0 };
-    const rect = imageContainerRef.current.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const x = ((clientX - rect.left) / rect.width) * 100; const y = ((clientY - rect.top) / rect.height) * 100; return { x, y };
-  };
-
-  const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => {
-      let path = `M ${x1} ${y1} L ${x2} ${y2}`;
-      const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLength = 2; const x3 = x2 - headLength * Math.cos(angle - Math.PI / 6); const y3 = y2 - headLength * Math.sin(angle - Math.PI / 6); const x4 = x2 - headLength * Math.cos(angle + Math.PI / 6); const y4 = y2 - headLength * Math.sin(angle + Math.PI / 6);
-      path += ` M ${x2} ${y2} L ${x3} ${y3} M ${x2} ${y2} L ${x4} ${y4}`; return path;
-  };
-
+  const handleSliderMove = (e: any) => { if (!imageContainerRef.current) return; const rect = imageContainerRef.current.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const x = Math.max(0, Math.min(clientX - rect.left, rect.width)); setSliderPosition((x / rect.width) * 100); };
+  const getRelativeCoords = (e: any) => { if (!imageContainerRef.current) return { x: 0, y: 0 }; const rect = imageContainerRef.current.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; const x = ((clientX - rect.left) / rect.width) * 100; const y = ((clientY - rect.top) / rect.height) * 100; return { x, y }; };
+  const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => { let path = `M ${x1} ${y1} L ${x2} ${y2}`; const angle = Math.atan2(y2 - y1, x2 - x1); const headLength = 2; const x3 = x2 - headLength * Math.cos(angle - Math.PI / 6); const y3 = y2 - headLength * Math.sin(angle - Math.PI / 6); const x4 = x2 - headLength * Math.cos(angle + Math.PI / 6); const y4 = y2 - headLength * Math.sin(angle + Math.PI / 6); path += ` M ${x2} ${y2} L ${x3} ${y3} M ${x2} ${y2} L ${x4} ${y4}`; return path; };
   const generateRectPath = (x1: number, y1: number, x2: number, y2: number) => { return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`; };
 
   const handlePointerDown = (e: any) => {
@@ -288,9 +300,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
 
   const handlePointerMove = (e: any) => { 
       if (isMagnifierActive && imageContainerRef.current) { const rect = imageContainerRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) { setMagnifierState({ x, y, show: true }); } else { setMagnifierState(prev => ({ ...prev, show: false })); } }
-      if (!isDrawing || !isDrawingMode) return; 
-      e.preventDefault(); const { x, y } = getRelativeCoords(e); 
-      if (startPoint) { if (activeTool === 'arrow') setCurrentPath(generateArrowPath(startPoint.x, startPoint.y, x, y)); else if (activeTool === 'rect') setCurrentPath(generateRectPath(startPoint.x, startPoint.y, x, y)); else setCurrentPath(prev => `${prev} L ${x} ${y}`); }
+      if (!isDrawing || !isDrawingMode) return; e.preventDefault(); const { x, y } = getRelativeCoords(e); if (startPoint) { if (activeTool === 'arrow') setCurrentPath(generateArrowPath(startPoint.x, startPoint.y, x, y)); else if (activeTool === 'rect') setCurrentPath(generateRectPath(startPoint.x, startPoint.y, x, y)); else setCurrentPath(prev => `${prev} L ${x} ${y}`); }
   };
 
   const handlePointerUp = () => { if (isDrawing && isDrawingMode && currentPath) { setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool, color: activeColor }]); setCurrentPath(""); } setIsDrawing(false); setStartPoint(null); };
@@ -324,11 +334,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return { color: finalColor, width: strokeWidth, opacity }; 
   };
 
-  // --- SELECCIONAR QUÉ LISTA MOSTRAR (VISIBLES) ---
   const visibleCorrections = isComparing ? historicalCorrections.filter(c => !c.deleted_at) : corrections.filter(c => { if (userRole === 'admin') return true; return !c.deleted_at; });
   const activeReplies = isComparing ? historicalReplies : replies;
 
-  // --- FUNCIÓN PARA RENDERIZAR MARCADORES (REUTILIZABLE) ---
+  // --- FUNCIÓN RENDER MARKERS ---
   const renderMarkers = (list: any[]) => (
       <>
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -339,11 +348,9 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                     const style = getStrokeStyle(tool as DrawingTool, color, isHovered, c.resolved);
                     return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
                 })))}
-            {/* Solo mostramos dibujos temporales si NO estamos comparando */}
             {!isComparing && tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
             {!isComparing && currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false, false).width} opacity={getStrokeStyle(activeTool, activeColor, false, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
         </svg>
-        
         {list.map((c, index) => c.x!=null && (
             <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.resolved ? '#10b981' : (c.color || '#ef4444')}}>
                 <span className="text-white text-[10px] font-bold">{index + 1}</span>
@@ -367,7 +374,15 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         
         <div className="flex gap-4 items-center">
             {onlineUsers.length > 0 && (<div className="flex -space-x-2 mr-2">{onlineUsers.map((user, index) => (<div key={index} className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm" style={{ backgroundColor: stringToColor(user) }} title={user}>{getInitials(user)}</div>))}</div>)}
-            <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
+            
+            <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>
+                {isPageApproved ? (
+                    <span className="group-hover:hidden flex items-center gap-1">
+                        ✅ APROBADA <span className="opacity-70 text-[9px] font-normal truncate max-w-[100px] ml-1">por {approvedBy || 'Admin'}</span>
+                    </span>
+                ) : "👍 APROBAR PÁGINA"}
+            </button>
+
             {corrections.length > 0 && (<button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"><span>📄 PDF DE CORRECCIONES</span></button>)}
             
             {historicalVersions.length > 0 ? (
@@ -403,6 +418,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       </div>
 
       <div className="flex-1 flex overflow-hidden">
+        {/* ZONA CENTRAL - IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {!isComparing && prevProject && (<button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>)}
             
