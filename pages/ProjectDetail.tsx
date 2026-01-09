@@ -483,7 +483,8 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                       {isDeadlinePassed && userRole === 'admin' && (
                           <div className="mb-4 bg-orange-100 border border-orange-200 text-orange-800 px-3 py-2 rounded-lg text-[10px] font-bold flex items-center gap-2">
                               <span>⚠️</span>
-                              <span>PLAZO CLIENTE CERRADO (Tú puedes editar)</span>
+                              {/* CAMBIO DE TEXTO AQUÍ */}
+                              <span>PLAZO DE LA DP FINALIZADO (Tú puedes editar)</span>
                           </div>
                       )}
 
