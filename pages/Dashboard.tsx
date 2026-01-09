@@ -171,7 +171,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
         <div className="relative h-[75vh] w-full flex items-center justify-center p-4" onClick={() => navigate(`/project/${p.id}`)}>
              <img src={p.image_url} className="max-h-full max-w-full object-contain shadow-lg cursor-pointer" alt={p.name} />
              <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
-                {p.is_approved ? (<div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>) : myComments.length > 0 ? (<div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>) : null}
+                {/* --- AÑADIDO: ETIQUETA 'por: email' EN VISOR --- */}
+                {p.is_approved ? (
+                    <div className="bg-emerald-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white flex flex-col items-start">
+                        <span>🎉 APROBADA</span>
+                        {p.approved_by && <span className="text-[9px] font-normal opacity-90 mt-0.5 block truncate max-w-[150px]">por: {p.approved_by}</span>}
+                    </div>
+                ) : isDeadlinePassed ? (<div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>) : myComments.length > 0 ? (<div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>) : null}
              </div>
         </div>
         <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-sm p-4 border-t border-slate-100 flex justify-between items-center">
@@ -308,7 +314,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                           <td className="pl-12 py-6 align-top">
                             <div className="flex flex-col gap-2">
                                {p.is_approved ? (
-                                   <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
+                                   // --- AÑADIDO: ETIQUETA 'por: email' EN LISTA ---
+                                   <div className="flex flex-col items-start">
+                                       <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-emerald-500 w-fit px-4 py-1.5 rounded-full shadow-md">🎉 APROBADA</div>
+                                       {p.approved_by && <span className="text-[9px] text-emerald-600 font-bold mt-1 truncate max-w-[150px]" title={p.approved_by}>👤 por: {p.approved_by}</span>}
+                                   </div>
                                ) : (
                                    <>
                                        {pendingCount > 0 && (<div className="text-[11px] font-black text-rose-600 uppercase tracking-widest mb-1 bg-rose-100 w-fit px-3 py-1.5 rounded-full border border-rose-200 shadow-sm animate-pulse">🚨 {pendingCount} PENDIENTE{pendingCount!==1?'S':''}</div>)}
@@ -340,7 +350,13 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                       return (
                        <div key={p.id} className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl transition-all flex flex-col">
                          <div onClick={() => navigate(`/project/${p.id}`)} className="aspect-[3/4] bg-slate-50 relative overflow-hidden cursor-pointer"><img src={p.image_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                           {p.is_approved ? (<div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">🎉 APROBADA</div>) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
+                           {/* --- AÑADIDO: ETIQUETA 'por: email' EN MOSAICO (GRID) --- */}
+                           {p.is_approved ? (
+                               <div className="absolute top-3 left-3 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white flex flex-col items-start">
+                                   <span>🎉 APROBADA</span>
+                                   {p.approved_by && <span className="text-[8px] font-normal opacity-90 mt-0.5 block truncate max-w-[100px]">por: {p.approved_by}</span>}
+                               </div>
+                           ) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
                            {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
                            {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>)}
                          </div>
