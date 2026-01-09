@@ -59,7 +59,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
 
   // ESTADO DE APROBACIÓN LOCAL
   const [isPageApproved, setIsPageApproved] = useState(false);
-  // --- NUEVO: ESTADO PARA GUARDAR QUIÉN APROBÓ ---
+  // ESTADO PARA GUARDAR QUIÉN APROBÓ
   const [approvedBy, setApprovedBy] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -75,7 +75,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return new Date() > new Date(project.correction_deadline);
   }, [project]);
 
-  // --- BLOQUEO GENERAL (MODIFICADO: ADMIN IGNORA FECHA LÍMITE) ---
+  // --- BLOQUEO GENERAL (ADMIN IGNORA LÍMITE) ---
   const isLocked = isPageApproved || (isDeadlinePassed && userRole !== 'admin');
 
   // 2. NAVEGACIÓN HERMANOS
@@ -115,6 +115,12 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     }
     return matches;
   }, [projects, project]);
+
+  // --- LISTA DE TODAS LAS VERSIONES DE ESTA PÁGINA (PARA EL DROPDOWN) ---
+  const allPageVersions = useMemo(() => {
+      if(!project) return [];
+      return [project, ...historicalVersions].sort((a:any, b:any) => a.version - b.version);
+  }, [project, historicalVersions]);
 
   // ESTADOS VISUALES
   const [newCoords, setNewCoords] = useState<{x: number, y: number} | null>(null);
@@ -177,6 +183,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     }
   };
 
+  // --- CARGAR DATOS HISTÓRICOS (COMPARACIÓN) ---
   const loadHistoricalData = async (targetId: string) => {
       if (!targetId) return;
       const { data: hComments } = await supabase.from('comments').select('*').eq('page_id', targetId).order('created_at', { ascending: true });
@@ -221,7 +228,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       loadProjectStatus();
       const commentsChannel = supabase.channel('realtime-comments').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData()).subscribe();
       const repliesChannel = supabase.channel('realtime-replies').on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData()).subscribe();
-      
       const projectChannel = supabase.channel('project-status-channel')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { 
             if (payload.new) { 
@@ -231,7 +237,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
             } 
         })
         .subscribe();
-      
       return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(repliesChannel); supabase.removeChannel(projectChannel); }
   }, [projectId]);
 
@@ -356,7 +361,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         <div className="flex gap-4 items-center">
             {onlineUsers.length > 0 && (<div className="flex -space-x-2 mr-2">{onlineUsers.map((user, index) => (<div key={index} className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm" style={{ backgroundColor: stringToColor(user) }} title={user}>{getInitials(user)}</div>))}</div>)}
             
-            {/* BOTÓN DE APROBACIÓN MODIFICADO */}
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>
                 {isPageApproved ? (
                     <span className="group-hover:hidden flex items-center gap-1">
@@ -395,7 +399,25 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                 <span className="text-[10px] font-black w-12 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
                 <button onClick={() => setZoomLevel(zoomLevel + 0.5)} className="w-8 h-8 flex items-center justify-center bg-white rounded-md font-bold text-slate-600">+</button>
             </div>
-            <div className="px-3 py-1 bg-rose-600 rounded-lg text-[10px] font-black text-white uppercase shadow-md shadow-rose-200">V{project.version}</div>
+            
+            {/* --- NUEVO SELECTOR DE VERSIONES --- */}
+            <div className="relative">
+                <select
+                    value={project.id}
+                    onChange={(e) => navigate(`/project/${e.target.value}`)}
+                    className="appearance-none bg-rose-600 text-white pl-4 pr-8 py-1.5 rounded-lg text-[10px] font-black uppercase shadow-md shadow-rose-200 cursor-pointer focus:outline-none hover:bg-rose-700 transition-colors"
+                >
+                    {allPageVersions.map((v: any) => (
+                        <option key={v.id} value={v.id} className="text-slate-800 bg-white">
+                            V{v.version} {v.id === project.id ? '(Actual)' : ''}
+                        </option>
+                    ))}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+            </div>
+
         </div>
       </div>
 
