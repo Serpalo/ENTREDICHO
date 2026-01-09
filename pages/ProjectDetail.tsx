@@ -75,8 +75,8 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return new Date() > new Date(project.correction_deadline);
   }, [project]);
 
-  // --- BLOQUEO GENERAL ---
-  const isLocked = isPageApproved || isDeadlinePassed;
+  // --- BLOQUEO GENERAL (MODIFICADO: ADMIN IGNORA FECHA LÍMITE) ---
+  const isLocked = isPageApproved || (isDeadlinePassed && userRole !== 'admin');
 
   // 2. NAVEGACIÓN HERMANOS
   const siblings = useMemo(() => {
@@ -128,6 +128,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [isMagnifierActive, setIsMagnifierActive] = useState(false);
   const [magnifierState, setMagnifierState] = useState({ x: 0, y: 0, show: false });
 
+  // AL CAMBIAR LA VERSIÓN A COMPARAR, CARGAMOS SUS COMENTARIOS
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
       setCompareTargetId(String(historicalVersions[0].id));
@@ -149,7 +150,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS ---
+  // --- CARGA DE DATOS ACTUALES ---
   const loadData = async () => {
     if (!projectId) return;
     
@@ -195,7 +196,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       }
   }, [isComparing, compareTargetId]);
 
-  // --- NUEVA CARGA DE ESTADO: Recuperamos también approved_by ---
   const loadProjectStatus = async () => {
       if (!projectId) return; 
       const { data } = await supabase
@@ -209,7 +209,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       }
   }
 
-  // --- GESTIÓN DE PRESENCIA ---
   useEffect(() => {
     if (!projectId || !session?.user?.email) return;
     const roomChannel = supabase.channel(`room-${projectId}`, { config: { presence: { key: session.user.email } } });
@@ -223,7 +222,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       const commentsChannel = supabase.channel('realtime-comments').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData()).subscribe();
       const repliesChannel = supabase.channel('realtime-replies').on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData()).subscribe();
       
-      // Escuchamos cambios en 'projects' para actualizar la aprobación en tiempo real
       const projectChannel = supabase.channel('project-status-channel')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { 
             if (payload.new) { 
@@ -237,31 +235,14 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(repliesChannel); supabase.removeChannel(projectChannel); }
   }, [projectId]);
 
-  // --- FUNCIÓN DE APROBACIÓN ACTUALIZADA ---
   const togglePageApproval = async () => {
       if (userRole !== 'admin') return alert("Solo el administrador puede aprobar o reabrir páginas.");
-      
       const newState = !isPageApproved; 
-      
-      // Si aprobamos, guardamos el email. Si desaprobamos, lo borramos (null).
       const approverEmail = newState ? (session?.user?.email || 'Admin') : null;
-
       setIsPageApproved(newState); 
       setApprovedBy(approverEmail);
-
-      const { error } = await supabase
-        .from('projects')
-        .update({ 
-            is_approved: newState,
-            approved_by: approverEmail // Guardamos quién lo hizo
-        })
-        .eq('id', projectId); 
-      
-      if (error) { 
-          alert("Error al actualizar estado: " + error.message); 
-          setIsPageApproved(!newState); 
-      } 
-      
+      const { error } = await supabase.from('projects').update({ is_approved: newState, approved_by: approverEmail }).eq('id', projectId); 
+      if (error) { alert("Error al actualizar estado: " + error.message); setIsPageApproved(!newState); } 
       if (onRefresh) onRefresh();
   };
 
@@ -375,6 +356,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         <div className="flex gap-4 items-center">
             {onlineUsers.length > 0 && (<div className="flex -space-x-2 mr-2">{onlineUsers.map((user, index) => (<div key={index} className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm" style={{ backgroundColor: stringToColor(user) }} title={user}>{getInitials(user)}</div>))}</div>)}
             
+            {/* BOTÓN DE APROBACIÓN MODIFICADO */}
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>
                 {isPageApproved ? (
                     <span className="group-hover:hidden flex items-center gap-1">
@@ -466,10 +448,23 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                 isLocked ? (
                   <div className={`p-6 border-b text-center flex flex-col items-center gap-2 ${isPageApproved ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
                       <span className="text-3xl">{isPageApproved ? "🎉" : "⏳"}</span>
-                      <div><h3 className={`font-black uppercase text-sm ${isPageApproved ? 'text-emerald-800' : 'text-orange-800'}`}>{isPageApproved ? "Página Aprobada" : "Plazo Finalizado"}</h3><p className={`text-[10px] px-2 leading-tight mt-1 ${isPageApproved ? 'text-emerald-600' : 'text-orange-600'}`}>{isPageApproved ? "Edición bloqueada por aprobación." : "El tiempo para correcciones ha terminado."}</p></div>
+                      {isPageApproved ? (
+                          <div><h3 className="font-black uppercase text-sm text-emerald-800">Página Aprobada</h3><p className="text-[10px] px-2 leading-tight mt-1 text-emerald-600">Edición bloqueada por aprobación.</p></div>
+                      ) : (
+                          // AVISO ESPECÍFICO PARA EL USUARIO BLOQUEADO
+                          <div><h3 className="font-black uppercase text-sm text-orange-800">Plazo Finalizado</h3><p className="text-[10px] px-2 leading-tight mt-1 text-orange-600">El tiempo para correcciones ha terminado.</p></div>
+                      )}
                   </div>
                 ) : (
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                      {/* --- AVISO PARA EL ADMIN SI EL PLAZO CADUCÓ PERO ÉL PUEDE EDITAR --- */}
+                      {isDeadlinePassed && userRole === 'admin' && (
+                          <div className="mb-4 bg-orange-100 border border-orange-200 text-orange-800 px-3 py-2 rounded-lg text-[10px] font-bold flex items-center gap-2">
+                              <span>⚠️</span>
+                              <span>PLAZO CLIENTE CERRADO (Tú puedes editar)</span>
+                          </div>
+                      )}
+
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
                         {isDrawingMode ? (<span className={`text-[9px] font-bold px-2 py-0.5 rounded animate-pulse bg-white border shadow-sm`} style={{ color: activeColor }}>{activeTool === 'highlighter' ? '🖍️ Subrayando...' : (activeTool === 'arrow' ? '↗ Dibujando flecha...' : (activeTool === 'rect' ? '⬜ Dibujando marco...' : '✏️ Dibujando...'))}</span>) : newCoords ? (<span className="text-[9px] font-bold text-white px-2 py-0.5 rounded animate-bounce" style={{ backgroundColor: activeColor }}>🎯 Punto marcado</span>) : null}
