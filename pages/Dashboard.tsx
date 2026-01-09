@@ -177,7 +177,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                         <span>🎉 APROBADA</span>
                         {p.approved_by && <span className="text-[9px] font-normal opacity-90 mt-0.5 block truncate max-w-[150px]">por: {p.approved_by}</span>}
                     </div>
-                ) : isDeadlinePassed ? (<div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>) : myComments.length > 0 ? (<div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>) : null}
+                ) : isDeadlinePassed ? (
+                    <div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">
+                        {userRole === 'admin' ? "⏳ PLAZO CLIENTE FIN" : "⏳ PLAZO CERRADO"}
+                    </div>
+                ) : pendingCount > 0 ? (<div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>) : myComments.length > 0 ? (<div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>) : null}
              </div>
         </div>
         <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-sm p-4 border-t border-slate-100 flex justify-between items-center">
@@ -328,7 +332,26 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                                )}
                             </div>
                           </td>
-                          <td className="px-4 py-6 align-top">{isDeadlinePassed ? (<div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-3 py-1.5 rounded-full shadow-md border-2 border-orange-400">🔒 CORRECCIONES CERRADAS</div>) : p.correction_deadline ? (<div className="flex flex-col text-slate-600"><span className="text-xs font-bold text-orange-600">{new Date(p.correction_deadline).toLocaleDateString()}</span><span className="text-[10px] font-medium opacity-60">{new Date(p.correction_deadline).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>) : (<span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin límite</span>)}</td>
+                          <td className="px-4 py-6 align-top">
+                            {isDeadlinePassed ? (
+                                userRole === 'admin' ? (
+                                    <div className="text-[11px] font-black text-orange-600 uppercase tracking-widest mb-1 bg-orange-100 w-fit px-3 py-1.5 rounded-full shadow-sm border border-orange-200">
+                                        ⏳ PLAZO CLIENTE FIN
+                                    </div>
+                                ) : (
+                                    <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-3 py-1.5 rounded-full shadow-md border-2 border-orange-400">
+                                        🔒 CORRECCIONES CERRADAS
+                                    </div>
+                                )
+                            ) : p.correction_deadline ? (
+                                <div className="flex flex-col text-slate-600">
+                                    <span className="text-xs font-bold text-orange-600">{new Date(p.correction_deadline).toLocaleDateString()}</span>
+                                    <span className="text-[10px] font-medium opacity-60">{new Date(p.correction_deadline).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                </div>
+                            ) : (
+                                <span className="text-[10px] font-bold text-slate-300 uppercase italic">Sin límite</span>
+                            )}
+                          </td>
                           <td className="px-8 py-6 text-right align-top">
                               <button onClick={() => navigate(`/project/${p.id}`)} className="text-rose-600 font-black text-[10px] uppercase border border-rose-100 px-3 py-1 rounded-lg hover:bg-rose-50 mr-2">Revisar →</button>
                           </td>
@@ -356,7 +379,11 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                                    <span>🎉 APROBADA</span>
                                    {p.approved_by && <span className="text-[8px] font-normal opacity-90 mt-0.5 block truncate max-w-[100px]">por: {p.approved_by}</span>}
                                </div>
-                           ) : isDeadlinePassed ? (<div className="absolute top-3 left-3 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">⏳ PLAZO CERRADO</div>) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
+                           ) : isDeadlinePassed ? (
+                               <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white ${userRole==='admin' ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-orange-500 text-white'}`}>
+                                   {userRole === 'admin' ? "⏳ PLAZO CLIENTE FIN" : "⏳ PLAZO CERRADO"}
+                               </div>
+                           ) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
                            {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
                            {userRole === 'admin' && (<button onClick={(e) => deleteFolder(e, p.id)} className="absolute top-3 right-3 bg-white/90 text-rose-500 w-8 h-8 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-bold">✕</button>)}
                          </div>
