@@ -175,7 +175,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
     }
   };
 
-  // --- NUEVA FUNCIÓN: CARGAR DATOS HISTÓRICOS (COMPARACIÓN) ---
+  // --- CARGAR DATOS HISTÓRICOS (COMPARACIÓN) ---
   const loadHistoricalData = async (targetId: string) => {
       if (!targetId) return;
       
@@ -200,7 +200,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       }
   };
 
-  // Trigger para cargar histórico cuando cambia el target
   useEffect(() => {
       if (isComparing && compareTargetId) {
           loadHistoricalData(compareTargetId);
@@ -212,60 +211,21 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       if (!projectId) return; const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single(); if (data) setIsPageApproved(data.is_approved);
   }
 
-  // --- GESTIÓN DE PRESENCIA (ONLINE USERS) ---
+  // --- GESTIÓN DE PRESENCIA ---
   useEffect(() => {
     if (!projectId || !session?.user?.email) return;
-
-    const roomChannel = supabase.channel(`room-${projectId}`, {
-        config: {
-            presence: {
-                key: session.user.email,
-            },
-        },
-    });
-
-    roomChannel
-        .on('presence', { event: 'sync' }, () => {
-            const newState = roomChannel.presenceState();
-            const users = Object.keys(newState);
-            setOnlineUsers(users);
-        })
-        .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await roomChannel.track({
-                    user: session.user.email,
-                    online_at: new Date().toISOString(),
-                });
-            }
-        });
-
-    return () => {
-        supabase.removeChannel(roomChannel);
-    };
+    const roomChannel = supabase.channel(`room-${projectId}`, { config: { presence: { key: session.user.email } } });
+    roomChannel.on('presence', { event: 'sync' }, () => { setOnlineUsers(Object.keys(roomChannel.presenceState())); }).subscribe(async (status) => { if (status === 'SUBSCRIBED') { await roomChannel.track({ user: session.user.email, online_at: new Date().toISOString() }); } });
+    return () => { supabase.removeChannel(roomChannel); };
   }, [projectId, session]);
-
 
   useEffect(() => { 
       loadData(); 
       loadProjectStatus();
-      
-      const commentsChannel = supabase.channel('realtime-comments')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData())
-        .subscribe();
-      
-      const repliesChannel = supabase.channel('realtime-replies')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData())
-        .subscribe();
-
-      const projectChannel = supabase.channel('project-status-channel')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); } })
-        .subscribe();
-      
-      return () => { 
-          supabase.removeChannel(commentsChannel); 
-          supabase.removeChannel(repliesChannel);
-          supabase.removeChannel(projectChannel); 
-      }
+      const commentsChannel = supabase.channel('realtime-comments').on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `page_id=eq.${projectId}` }, () => loadData()).subscribe();
+      const repliesChannel = supabase.channel('realtime-replies').on('postgres_changes', { event: '*', schema: 'public', table: 'comment_replies' }, () => loadData()).subscribe();
+      const projectChannel = supabase.channel('project-status-channel').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` }, (payload: any) => { if (payload.new) { setIsPageApproved(payload.new.is_approved); if (onRefresh) onRefresh(); } }).subscribe();
+      return () => { supabase.removeChannel(commentsChannel); supabase.removeChannel(repliesChannel); supabase.removeChannel(projectChannel); }
   }, [projectId]);
 
   const togglePageApproval = async () => {
@@ -276,29 +236,20 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const handleDownloadPDF = () => {
     const activeCorrections = corrections.filter(c => !c.deleted_at);
     const doc = new jsPDF(); const title = project ? `Correcciones: ${project.name}` : "Correcciones"; doc.setFontSize(16); doc.setTextColor(225, 29, 72); doc.text(title, 10, 15); if (isPageApproved) { doc.setTextColor(22, 163, 74); doc.text("[PÁGINA APROBADA]", 140, 15); } else if (isDeadlinePassed) { doc.setTextColor(249, 115, 22); doc.text("[PLAZO CERRADO]", 140, 15); } doc.setFontSize(10); doc.setTextColor(100); doc.text(`Generado el: ${new Date().toLocaleString()}`, 10, 22); doc.setLineWidth(0.5); doc.line(10, 25, 200, 25); let yPosition = 35; 
-    
     activeCorrections.forEach((c, index) => { 
         if (yPosition > 270) { doc.addPage(); yPosition = 20; } 
         let statusText = "[PENDIENTE]"; if (c.resolved) { doc.setTextColor(22, 163, 74); statusText = "[HECHO]"; } else if (c.is_general) { doc.setTextColor(37, 99, 235); statusText = "[GENERAL]"; } else { doc.setTextColor(225, 29, 72); statusText = "[PENDIENTE]"; } 
         doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${statusText}`, 10, yPosition); const date = new Date(c.created_at).toLocaleString(); doc.setFont("helvetica", "normal"); doc.setTextColor(150); doc.text(date, 150, yPosition); yPosition += 5; doc.setTextColor(0); 
         const splitText = doc.splitTextToSize(c.content || "(Sin texto)", 180); doc.text(splitText, 15, yPosition); yPosition += (splitText.length * 5) + 5; 
-        
         const myReplies = replies.filter(r => r.comment_id === c.id);
         if (myReplies.length > 0) {
             myReplies.forEach(r => {
                 if (yPosition > 280) { doc.addPage(); yPosition = 20; }
-                doc.setTextColor(100);
-                doc.setFontSize(8);
-                const replyTitle = `↳ Respuesta (${r.user_email || 'Anónimo'}):`;
-                doc.text(replyTitle, 20, yPosition);
-                yPosition += 4;
-                const replyContent = doc.splitTextToSize(r.content, 170);
-                doc.text(replyContent, 20, yPosition);
-                yPosition += (replyContent.length * 4) + 2;
+                doc.setTextColor(100); doc.setFontSize(8); doc.text(`↳ Respuesta (${r.user_email || 'Anónimo'}):`, 20, yPosition); yPosition += 4;
+                const replyContent = doc.splitTextToSize(r.content, 170); doc.text(replyContent, 20, yPosition); yPosition += (replyContent.length * 4) + 2;
             });
             yPosition += 5;
         }
-
         doc.setDrawColor(240); doc.line(10, yPosition - 5, 200, yPosition - 5); 
     }); 
     doc.save(`Correcciones_${project?.name || 'documento'}.pdf`);
@@ -323,188 +274,84 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const generateArrowPath = (x1: number, y1: number, x2: number, y2: number) => {
       let path = `M ${x1} ${y1} L ${x2} ${y2}`;
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLength = 2; 
-      const x3 = x2 - headLength * Math.cos(angle - Math.PI / 6);
-      const y3 = y2 - headLength * Math.sin(angle - Math.PI / 6);
-      const x4 = x2 - headLength * Math.cos(angle + Math.PI / 6);
-      const y4 = y2 - headLength * Math.sin(angle + Math.PI / 6);
-      path += ` M ${x2} ${y2} L ${x3} ${y3} M ${x2} ${y2} L ${x4} ${y4}`;
-      return path;
+      const headLength = 2; const x3 = x2 - headLength * Math.cos(angle - Math.PI / 6); const y3 = y2 - headLength * Math.sin(angle - Math.PI / 6); const x4 = x2 - headLength * Math.cos(angle + Math.PI / 6); const y4 = y2 - headLength * Math.sin(angle + Math.PI / 6);
+      path += ` M ${x2} ${y2} L ${x3} ${y3} M ${x2} ${y2} L ${x4} ${y4}`; return path;
   };
 
-  const generateRectPath = (x1: number, y1: number, x2: number, y2: number) => {
-      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`;
-  };
+  const generateRectPath = (x1: number, y1: number, x2: number, y2: number) => { return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2} L ${x1} ${y2} Z`; };
 
   const handlePointerDown = (e: any) => {
     if (isComparing || isLocked || isMagnifierActive) return;
-    
-    if (isDrawingMode) { 
-        setIsDrawing(true); 
-        const { x, y } = getRelativeCoords(e);
-        setStartPoint({ x, y });
-        
-        if (activeTool === 'arrow') setCurrentPath(`M ${x} ${y} L ${x} ${y}`); 
-        else if (activeTool === 'rect') setCurrentPath(generateRectPath(x, y, x, y));
-        else setCurrentPath(`M ${x} ${y}`); 
-        
-        e.preventDefault(); 
-    } 
+    if (isDrawingMode) { setIsDrawing(true); const { x, y } = getRelativeCoords(e); setStartPoint({ x, y }); if (activeTool === 'arrow') setCurrentPath(`M ${x} ${y} L ${x} ${y}`); else if (activeTool === 'rect') setCurrentPath(generateRectPath(x, y, x, y)); else setCurrentPath(`M ${x} ${y}`); e.preventDefault(); } 
     else { const { x, y } = getRelativeCoords(e); if (x >= 0 && x <= 100 && y >= 0 && y <= 100) { setNewCoords({ x: x/100, y: y/100 }); setTimeout(() => textareaRef.current?.focus(), 50); } }
   };
 
   const handlePointerMove = (e: any) => { 
-      if (isMagnifierActive && imageContainerRef.current) {
-          const rect = imageContainerRef.current.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-          if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) { setMagnifierState({ x, y, show: true }); } else { setMagnifierState(prev => ({ ...prev, show: false })); }
-      }
+      if (isMagnifierActive && imageContainerRef.current) { const rect = imageContainerRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) { setMagnifierState({ x, y, show: true }); } else { setMagnifierState(prev => ({ ...prev, show: false })); } }
       if (!isDrawing || !isDrawingMode) return; 
-      e.preventDefault(); 
-      const { x, y } = getRelativeCoords(e); 
-      
-      if (startPoint) {
-          if (activeTool === 'arrow') setCurrentPath(generateArrowPath(startPoint.x, startPoint.y, x, y));
-          else if (activeTool === 'rect') setCurrentPath(generateRectPath(startPoint.x, startPoint.y, x, y));
-          else setCurrentPath(prev => `${prev} L ${x} ${y}`);
-      }
+      e.preventDefault(); const { x, y } = getRelativeCoords(e); 
+      if (startPoint) { if (activeTool === 'arrow') setCurrentPath(generateArrowPath(startPoint.x, startPoint.y, x, y)); else if (activeTool === 'rect') setCurrentPath(generateRectPath(startPoint.x, startPoint.y, x, y)); else setCurrentPath(prev => `${prev} L ${x} ${y}`); }
   };
 
-  const handlePointerUp = () => { 
-      if (isDrawing && isDrawingMode && currentPath) { 
-          setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool, color: activeColor }]); 
-          setCurrentPath(""); 
-      } 
-      setIsDrawing(false); setStartPoint(null);
-  };
+  const handlePointerUp = () => { if (isDrawing && isDrawingMode && currentPath) { setTempDrawings(prev => [...prev, { path: currentPath, tool: activeTool, color: activeColor }]); setCurrentPath(""); } setIsDrawing(false); setStartPoint(null); };
   const handlePointerLeave = () => { setIsDrawing(false); setMagnifierState(prev => ({ ...prev, show: false })); setStartPoint(null); };
 
   const handleAddNote = async (isGeneral = false) => {
-    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); 
-    setLoading(true); 
-    
+    if (!newNote && !newCoords && tempDrawings.length === 0) return alert("Escribe algo, marca un punto o dibuja."); setLoading(true); 
     let fileUrl = ""; 
     try { 
-        if (selectedFile) { 
-            const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); 
-            const fileName = `adjunto-${Date.now()}-${sanitizedName}`; 
-            const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); 
-            if (uploadError) throw uploadError; 
-            const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); 
-            fileUrl = data.publicUrl; 
-        } 
-        
-        const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; 
-        const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
-        
-        let finalX = newCoords?.x || null;
-        let finalY = newCoords?.y || null;
-
-        if ((finalX === null || finalY === null) && tempDrawings.length > 0) {
-            const firstPath = tempDrawings[0].path; 
-            const parts = firstPath.trim().split(' ');
-            if (parts.length >= 3 && parts[0] === 'M') {
-                finalX = parseFloat(parts[1]) / 100;
-                finalY = parseFloat(parts[2]) / 100;
-            }
-        }
-
-        const { error: insertError } = await supabase.from('comments').insert([{ 
-            page_id: projectId, 
-            content: newNote, 
-            attachment_url: fileUrl, 
-            resolved: false, 
-            is_general: isGeneral, 
-            x: finalX, 
-            y: finalY, 
-            drawing_data: drawingDataString, 
-            drawing_tool: usedTool,
-            color: activeColor,
-            user_email: session?.user?.email || 'Anónimo'
-        }]); 
-        
-        if (insertError) alert("Error al guardar: " + insertError.message); 
-        else { 
-            setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); 
-        } 
-    } catch (err: any) { 
-        alert("Error: " + err.message); 
-    } finally { 
-        setLoading(false); 
-    }
+        if (selectedFile) { const sanitizedName = selectedFile.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_"); const fileName = `adjunto-${Date.now()}-${sanitizedName}`; const { error: uploadError } = await supabase.storage.from('FOLLETOS').upload(fileName, selectedFile); if (uploadError) throw uploadError; const { data } = supabase.storage.from('FOLLETOS').getPublicUrl(fileName); fileUrl = data.publicUrl; } 
+        const drawingDataString = tempDrawings.length > 0 ? tempDrawings.map(d => d.path).join('|') : null; const usedTool = tempDrawings.length > 0 ? tempDrawings[tempDrawings.length-1].tool : 'pen'; 
+        let finalX = newCoords?.x || null; let finalY = newCoords?.y || null;
+        if ((finalX === null || finalY === null) && tempDrawings.length > 0) { const firstPath = tempDrawings[0].path; const parts = firstPath.trim().split(' '); if (parts.length >= 3 && parts[0] === 'M') { finalX = parseFloat(parts[1]) / 100; finalY = parseFloat(parts[2]) / 100; } }
+        const { error: insertError } = await supabase.from('comments').insert([{ page_id: projectId, content: newNote, attachment_url: fileUrl, resolved: false, is_general: isGeneral, x: finalX, y: finalY, drawing_data: drawingDataString, drawing_tool: usedTool, color: activeColor, user_email: session?.user?.email || 'Anónimo' }]); 
+        if (insertError) alert("Error al guardar: " + insertError.message); else { setNewNote(""); setSelectedFile(null); setNewCoords(null); setTempDrawings([]); setCurrentPath(""); } 
+    } catch (err: any) { alert("Error: " + err.message); } finally { setLoading(false); }
   };
 
   const handleSendReply = async (commentId: string) => {
-      if (!replyText.trim()) return;
-      setSendingReply(true);
-      const user = session?.user?.email || 'Anónimo';
-      
-      const { error } = await supabase.from('comment_replies').insert({
-          comment_id: commentId,
-          content: replyText,
-          user_email: user
-      });
-
-      if (error) {
-          alert("Error al enviar respuesta: " + error.message);
-      } else {
-          setReplyText("");
-          setReplyingTo(null);
-          loadData(); 
-      }
-      setSendingReply(false);
+      if (!replyText.trim()) return; setSendingReply(true); const user = session?.user?.email || 'Anónimo';
+      const { error } = await supabase.from('comment_replies').insert({ comment_id: commentId, content: replyText, user_email: user });
+      if (error) { alert("Error al enviar respuesta: " + error.message); } else { setReplyText(""); setReplyingTo(null); loadData(); } setSendingReply(false);
   };
 
-  const toggleCheck = async (id: string, currentResolved: boolean) => { 
-      setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c));
-      await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); 
-  };
-
-  const deleteComment = async (id: string) => { 
-      if (window.confirm("¿Seguro que quieres borrar esta nota?")) { 
-          const currentUser = session?.user?.email || "usuario_desconocido";
-          const timestamp = new Date().toISOString();
-
-          const { error } = await supabase
-            .from('comments')
-            .update({ 
-                deleted_at: timestamp, 
-                deleted_by: currentUser 
-            })
-            .eq('id', id);
-          
-          if (error) {
-              alert("Error al borrar: " + error.message);
-          } else {
-              loadData();
-          }
-      } 
-  };
+  const toggleCheck = async (id: string, currentResolved: boolean) => { setCorrections(prev => prev.map(c => c.id === id ? { ...c, resolved: !currentResolved } : c)); await supabase.from('comments').update({ resolved: !currentResolved }).eq('id', id); };
+  const deleteComment = async (id: string) => { if (window.confirm("¿Seguro que quieres borrar esta nota?")) { const currentUser = session?.user?.email || "usuario_desconocido"; const timestamp = new Date().toISOString(); const { error } = await supabase.from('comments').update({ deleted_at: timestamp, deleted_by: currentUser }).eq('id', id); if (error) { alert("Error al borrar: " + error.message); } else { loadData(); } } };
   
   const getStrokeStyle = (tool: DrawingTool, color: string, isHovered: boolean, isResolved: boolean) => { 
-      const isHighlighter = tool === 'highlighter'; 
-      let strokeWidth = isHighlighter ? "2" : "1";
-      let opacity = isHighlighter ? "0.5" : "1";
-      let finalColor = isResolved ? '#10b981' : color;
-
-      if (isHighlighter && isHovered) { strokeWidth = "4"; opacity = "0.8"; }
-      if ((tool === 'pen' || tool === 'arrow' || tool === 'rect') && isHovered) { 
-          strokeWidth = "3"; 
-          opacity = "0.8";
-      }
+      const isHighlighter = tool === 'highlighter'; let strokeWidth = isHighlighter ? "2" : "1"; let opacity = isHighlighter ? "0.5" : "1"; let finalColor = isResolved ? '#10b981' : color;
+      if (isHighlighter && isHovered) { strokeWidth = "4"; opacity = "0.8"; } if ((tool === 'pen' || tool === 'arrow' || tool === 'rect') && isHovered) { strokeWidth = "3"; opacity = "0.8"; }
       return { color: finalColor, width: strokeWidth, opacity }; 
   };
 
-  // --- SELECCIONAR QUÉ LISTA MOSTRAR EN EL SIDEBAR ---
-  const visibleCorrections = isComparing 
-    ? historicalCorrections.filter(c => !c.deleted_at) 
-    : corrections.filter(c => {
-        if (userRole === 'admin') return true; 
-        return !c.deleted_at; 
-    });
-
+  // --- SELECCIONAR QUÉ LISTA MOSTRAR (VISIBLES) ---
+  const visibleCorrections = isComparing ? historicalCorrections.filter(c => !c.deleted_at) : corrections.filter(c => { if (userRole === 'admin') return true; return !c.deleted_at; });
   const activeReplies = isComparing ? historicalReplies : replies;
+
+  // --- FUNCIÓN PARA RENDERIZAR MARCADORES (REUTILIZABLE) ---
+  const renderMarkers = (list: any[]) => (
+      <>
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {list.map((c, index) => c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
+                    const isHovered = hoveredId === c.id; 
+                    const tool = c.drawing_tool || 'pen';
+                    const color = c.color || '#ef4444'; 
+                    const style = getStrokeStyle(tool as DrawingTool, color, isHovered, c.resolved);
+                    return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
+                })))}
+            {/* Solo mostramos dibujos temporales si NO estamos comparando */}
+            {!isComparing && tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
+            {!isComparing && currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false, false).width} opacity={getStrokeStyle(activeTool, activeColor, false, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+        </svg>
+        
+        {list.map((c, index) => c.x!=null && (
+            <div key={c.id} className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.resolved ? '#10b981' : (c.color || '#ef4444')}}>
+                <span className="text-white text-[10px] font-bold">{index + 1}</span>
+            </div>
+        ))}
+        {!isComparing && newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
+      </>
+  );
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
 
@@ -514,29 +361,12 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       <div className="h-20 bg-white border-b border-slate-200 px-8 flex justify-between items-center shrink-0 z-50">
         <div className="flex gap-4 items-center">
           <button onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors">← VOLVER</button>
-          
           <span className="text-xl font-black italic tracking-tighter text-slate-800 uppercase mr-4">DocCheck</span>
-          
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md border-l border-slate-300 pl-4">{project.name}</h2>
         </div>
         
         <div className="flex gap-4 items-center">
-            
-            {onlineUsers.length > 0 && (
-                <div className="flex -space-x-2 mr-2">
-                    {onlineUsers.map((user, index) => (
-                        <div 
-                            key={index} 
-                            className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm"
-                            style={{ backgroundColor: stringToColor(user) }}
-                            title={user}
-                        >
-                            {getInitials(user)}
-                        </div>
-                    ))}
-                </div>
-            )}
-
+            {onlineUsers.length > 0 && (<div className="flex -space-x-2 mr-2">{onlineUsers.map((user, index) => (<div key={index} className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-[10px] font-black uppercase shadow-sm" style={{ backgroundColor: stringToColor(user) }} title={user}>{getInitials(user)}</div>))}</div>)}
             <button onClick={togglePageApproval} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-md flex items-center gap-2 ${isPageApproved ? 'bg-emerald-500 text-white hover:bg-red-500' : 'bg-slate-800 text-white hover:bg-emerald-600'}`} title={isPageApproved ? "Click para reabrir" : "Click para finalizar"}>{isPageApproved ? <span className="group-hover:hidden">✅ PÁGINA APROBADA</span> : "👍 APROBAR PÁGINA"}</button>
             {corrections.length > 0 && (<button onClick={handleDownloadPDF} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 flex items-center gap-2 shadow-sm"><span>📄 PDF DE CORRECCIONES</span></button>)}
             
@@ -573,7 +403,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* ZONA CENTRAL - IMAGEN */}
         <div className="flex-1 bg-slate-200/50 relative overflow-auto flex items-center justify-center p-8 select-none">
             {!isComparing && prevProject && (<button onClick={() => navigate(`/project/${prevProject.id}`)} className="fixed left-6 top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>)}
             
@@ -581,9 +410,11 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                 comparisonMode === 'split' ? (
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-col-resize group" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
                         <img src={project.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" />
-                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}><div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}><img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" /><div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{compareProject.version} (Anterior)</div></div></div>
+                        <div className="absolute top-0 left-0 h-full overflow-hidden border-r-4 border-white shadow-xl" style={{ width: `${sliderPosition}%` }}><div className="relative w-full h-full" style={{ width: imageContainerRef.current ? `${imageContainerRef.current.clientWidth}px` : '100%' }}><img src={compareProject.image_url} className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none" /><div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80" style={{ opacity: sliderPosition < 10 ? 0 : 1, transition: 'opacity 0.2s' }}>V{compareProject.version} (Anterior)</div></div></div>
                         <div className="absolute top-0 bottom-0 w-1 bg-white cursor-col-resize z-30 flex items-center justify-center" style={{ left: `${sliderPosition}%` }}><div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow border border-slate-200"><span className="text-slate-400 text-[10px]">↔</span></div></div>
-                        <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80">V{project.version} (Actual)</div>
+                        <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80" style={{ opacity: sliderPosition > 90 ? 0 : 1, transition: 'opacity 0.2s' }}>V{project.version} (Actual)</div>
+                        {/* MARCADORES EN MODO SPLIT (SOBREIMPRESOS) */}
+                        {!hideMarkers && <div className="absolute inset-0 z-40 pointer-events-none">{renderMarkers(visibleCorrections)}</div>}
                     </div>
                 ) : (
                     <div ref={imageContainerRef} className="relative shadow-2xl bg-white cursor-ew-resize group overflow-hidden" onMouseMove={handleSliderMove} onTouchMove={handleSliderMove} onClick={handleSliderMove} style={{ width: zoomLevel===1?'auto':`${zoomLevel*100}%`, height: zoomLevel===1?'100%':'auto', aspectRatio:'3/4' }}>
@@ -592,6 +423,8 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                           <div className="absolute top-4 left-4 bg-slate-800 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none">Fondo: V{compareProject.version}</div>
                           <div className="absolute top-4 right-4 bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded opacity-80 pointer-events-none" style={{ opacity: Math.max(0.3, sliderPosition / 100) }}>Capa superior: V{project.version} ({Math.round(sliderPosition)}%)</div>
                           <div className="absolute bottom-0 left-0 h-1 bg-rose-600/50 z-30 pointer-events-none" style={{ width: `${sliderPosition}%` }}></div>
+                          {/* MARCADORES EN MODO OVERLAY */}
+                          {!hideMarkers && <div className="absolute inset-0 z-40 pointer-events-none">{renderMarkers(visibleCorrections)}</div>}
                     </div>
                 )
             ) : (
@@ -600,33 +433,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                   {isPageApproved && (<div className="absolute top-4 right-4 bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-80 border-2 border-white">🔒 FINALIZADA</div>)}
                   {isDeadlinePassed && !isPageApproved && (<div className="absolute top-4 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-lg z-50 pointer-events-none opacity-90 border-2 border-white">⏳ PLAZO CERRADO</div>)}
                   {isMagnifierActive && magnifierState.show && imageContainerRef.current && (<div style={{ position: 'absolute', left: magnifierState.x - 75, top: magnifierState.y - 75, width: '150px', height: '150px', borderRadius: '50%', border: '4px solid white', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', pointerEvents: 'none', backgroundImage: `url(${project.image_url})`, backgroundRepeat: 'no-repeat', backgroundSize: `${imageContainerRef.current.clientWidth * 2.5}px ${imageContainerRef.current.clientHeight * 2.5}px`, backgroundPosition: `-${(magnifierState.x * 2.5) - 75}px -${(magnifierState.y * 2.5) - 75}px`, zIndex: 100, backgroundColor: 'white' }} />)}
-                  {!hideMarkers && (
-                      <>
-                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            {visibleCorrections.map((c, index) => c.drawing_data && (c.drawing_data.split('|').map((path: string, i: number) => {
-                                    const isHovered = hoveredId === c.id; 
-                                    const tool = c.drawing_tool || 'pen';
-                                    const color = c.color || '#ef4444'; 
-                                    const style = getStrokeStyle(tool as DrawingTool, color, isHovered, c.resolved);
-                                    return (<path key={`${c.id}-${i}`} d={path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" className={`transition-all duration-200 ${isHovered ? "drop-shadow-lg" : ""}`} />);
-                                })))}
-                            {tempDrawings.map((item, i) => { const style = getStrokeStyle(item.tool, item.color, false, false); return <path key={`temp-${i}`} d={item.path} stroke={style.color} strokeWidth={style.width} opacity={style.opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" /> })}
-                            {currentPath && (<path d={currentPath} stroke={getStrokeStyle(activeTool, activeColor, false, false).color} strokeWidth={getStrokeStyle(activeTool, activeColor, false, false).width} opacity={getStrokeStyle(activeTool, activeColor, false, false).opacity} fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
-                        </svg>
-                        
-                        {visibleCorrections.map((c, index) => c.x!=null && (
-                            <div 
-                                key={c.id} 
-                                className={`absolute w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-20 ${hoveredId===c.id? "scale-150 z-30" : "hover:scale-125"}`} 
-                                style={{left:`${c.x*100}%`, top:`${c.y*100}%`, backgroundColor: c.resolved ? '#10b981' : (c.color || '#ef4444')}}
-                            >
-                                <span className="text-white text-[10px] font-bold">{index + 1}</span>
-                            </div>
-                        ))}
-                        
-                        {newCoords && <div className="absolute w-8 h-8 animate-pulse rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{left:`${newCoords.x*100}%`, top:`${newCoords.y*100}%`, backgroundColor: activeColor + '99'}}></div>}
-                      </>
-                  )}
+                  {!hideMarkers && renderMarkers(visibleCorrections)}
                 </div>
             )}
             {!isComparing && nextProject && (<button onClick={() => navigate(`/project/${nextProject.id}`)} className="fixed right-[430px] top-1/2 -translate-y-1/2 z-50 p-4 bg-slate-800/90 text-white rounded-full shadow-2xl hover:bg-rose-600 hover:scale-110 transition-all border-2 border-white/20"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>)}
@@ -635,15 +442,11 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         {/* SIDEBAR DERECHA */}
         <div className={`w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20 transition-colors duration-300 ${isComparing ? 'bg-slate-100' : 'bg-white'}`}>
             {isComparing ? (
-                // --- CABECERA MODO COMPARACIÓN (HISTÓRICO) ---
                 <div className="p-6 border-b border-slate-200 bg-slate-100 flex flex-col gap-2">
-                    <div className="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase">
-                        <span>👁️ VIENDO NOTAS DE LA V{compareProject?.version}</span>
-                    </div>
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase"><span>👁️ VIENDO NOTAS DE LA V{compareProject?.version}</span></div>
                     <p className="text-[10px] text-slate-400 leading-tight">Estás consultando el historial para verificar cambios. Estas notas no se pueden editar.</p>
                 </div>
             ) : (
-                // --- CABECERA NORMAL (EDICIÓN) ---
                 isLocked ? (
                   <div className={`p-6 border-b text-center flex flex-col items-center gap-2 ${isPageApproved ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
                       <span className="text-3xl">{isPageApproved ? "🎉" : "⏳"}</span>
@@ -659,9 +462,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                       
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-2 mb-1 justify-center">
-                            {COLORS.map((c) => (
-                                <button key={c.hex} onClick={() => setActiveColor(c.hex)} className={`w-6 h-6 rounded-full border-2 transition-all ${activeColor === c.hex ? 'border-slate-600 scale-110 shadow-md' : 'border-transparent hover:scale-110'}`} style={{ backgroundColor: c.hex }} title={c.name} />
-                            ))}
+                            {COLORS.map((c) => (<button key={c.hex} onClick={() => setActiveColor(c.hex)} className={`w-6 h-6 rounded-full border-2 transition-all ${activeColor === c.hex ? 'border-slate-600 scale-110 shadow-md' : 'border-transparent hover:scale-110'}`} style={{ backgroundColor: c.hex }} title={c.name} />))}
                         </div>
                         <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-lg">
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo"><span>✏️</span></button>
@@ -690,88 +491,18 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                 {visibleCorrections.map((c, i) => {
                   const myReplies = activeReplies.filter(r => r.comment_id === c.id);
                   return (
-                    <div 
-                        key={c.id} 
-                        onMouseEnter={() => !c.deleted_at && setHoveredId(c.id)} 
-                        onMouseLeave={() => setHoveredId(null)} 
-                        className={`p-4 rounded-2xl border-2 transition-all 
-                            ${c.deleted_at ? 'bg-slate-50 border-slate-200 opacity-70 grayscale' : (c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200'))} 
-                            ${hoveredId===c.id && !c.deleted_at ? 'scale-[1.02] shadow-md':''}`}
-                    >
+                    <div key={c.id} onMouseEnter={() => !c.deleted_at && setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`p-4 rounded-2xl border-2 transition-all ${c.deleted_at ? 'bg-slate-50 border-slate-200 opacity-70 grayscale' : (c.resolved ? 'bg-emerald-50 border-emerald-200 opacity-60' : (c.is_general ? 'bg-blue-50 border-blue-200' : 'bg-rose-50 border-rose-200'))} ${hoveredId===c.id && !c.deleted_at ? 'scale-[1.02] shadow-md':''}`}>
                         <div className="flex gap-3 items-start">
-                        {!c.deleted_at && (
-                            <button 
-                                onClick={() => !isComparing && userRole === 'admin' && toggleCheck(c.id, c.resolved)} 
-                                className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                                    ${!isComparing && userRole === 'admin' ? 'cursor-pointer hover:scale-110' : 'cursor-default'}
-                                    ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400" : "bg-white border-rose-400")}`}
-                                title={isComparing ? "Modo lectura" : (userRole === 'admin' ? "Marcar como hecho/pendiente" : "Solo el administrador puede marcar esto")}
-                            >
-                                {c.resolved && "✓"}
-                            </button>
-                        )}
+                        {!c.deleted_at && (<button onClick={() => !isComparing && userRole === 'admin' && toggleCheck(c.id, c.resolved)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm ${!isComparing && userRole === 'admin' ? 'cursor-pointer hover:scale-110' : 'cursor-default'} ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400" : "bg-white border-rose-400")}`} title={isComparing ? "Modo lectura" : (userRole === 'admin' ? "Marcar como hecho/pendiente" : "Solo el administrador puede marcar esto")}>{c.resolved && "✓"}</button>)}
                         {c.deleted_at && <span className="text-xl">🗑️</span>}
-                        
                         <div className="flex-1">
-                            <div className="flex justify-between">
-                                <span className={`text-[9px] font-black uppercase ${c.deleted_at ? 'text-slate-400 line-through' : (c.is_general ? 'text-blue-400' : 'text-purple-300')}`}>#{i+1} {c.is_general && "GENERAL"}</span>
-                                <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            
+                            <div className="flex justify-between"><span className={`text-[9px] font-black uppercase ${c.deleted_at ? 'text-slate-400 line-through' : (c.is_general ? 'text-blue-400' : 'text-purple-300')}`}>#{i+1} {c.is_general && "GENERAL"}</span><span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
                             <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">👤 {c.user_email || 'Anónimo'}</span>
-
-                            <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>
-                                {c.content}
-                            </p>
-                            
-                            {c.deleted_at && (
-                                <div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">
-                                    ❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>
-                                    📅 {new Date(c.deleted_at).toLocaleString()}
-                                </div>
-                            )}
-                            
-                            <div className="flex flex-wrap gap-2 mt-2 items-center">
-                            {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
-                            </div>
-
-                            {!c.deleted_at && (
-                                <div className="mt-4 flex flex-col gap-2">
-                                    {myReplies.map(r => (
-                                        <div key={r.id} className="bg-slate-100 p-2 rounded-lg border border-slate-200 ml-2 relative">
-                                            <div className="absolute -left-2 top-3 w-2 h-[1px] bg-slate-300"></div>
-                                            <div className="flex justify-between items-baseline mb-1">
-                                                <span className="text-[8px] font-black text-slate-500 uppercase">{r.user_email || 'Anónimo'}</span>
-                                                <span className="text-[7px] text-slate-400">{new Date(r.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', day: 'numeric', month:'numeric'})}</span>
-                                            </div>
-                                            <p className="text-[10px] text-slate-700 font-medium leading-snug">{r.content}</p>
-                                        </div>
-                                    ))}
-
-                                    {!isComparing && replyingTo === c.id ? (
-                                        <div className="ml-2 mt-2 bg-white border border-slate-200 p-2 rounded-lg shadow-sm animate-fadeIn">
-                                            <textarea autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Escribe una respuesta..." className="w-full text-xs p-2 border border-slate-200 rounded-md focus:outline-none focus:border-rose-400 resize-none h-16 bg-slate-50" />
-                                            <div className="flex justify-end gap-2 mt-2">
-                                                <button onClick={() => setReplyingTo(null)} className="text-[9px] font-bold text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
-                                                <button onClick={() => handleSendReply(c.id)} disabled={sendingReply || !replyText.trim()} className="bg-rose-600 text-white text-[9px] font-bold px-3 py-1 rounded uppercase hover:bg-rose-700 disabled:opacity-50">
-                                                    {sendingReply ? "Enviando..." : "Responder"}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            )}
-
-                            {!isComparing && (
-                                <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50 gap-3">
-                                    {!isLocked && !c.deleted_at && (
-                                        <>
-                                            <button onClick={() => { setReplyingTo(c.id); setReplyText(""); }} className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 flex items-center gap-1">💬 Responder</button>
-                                            <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>
-                                        </>
-                                    )}
-                                </div>
-                            )}
+                            <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>{c.content}</p>
+                            {c.deleted_at && (<div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>📅 {new Date(c.deleted_at).toLocaleString()}</div>)}
+                            <div className="flex flex-wrap gap-2 mt-2 items-center">{c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}</div>
+                            {!c.deleted_at && (<div className="mt-4 flex flex-col gap-2">{myReplies.map(r => (<div key={r.id} className="bg-slate-100 p-2 rounded-lg border border-slate-200 ml-2 relative"><div className="absolute -left-2 top-3 w-2 h-[1px] bg-slate-300"></div><div className="flex justify-between items-baseline mb-1"><span className="text-[8px] font-black text-slate-500 uppercase">{r.user_email || 'Anónimo'}</span><span className="text-[7px] text-slate-400">{new Date(r.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', day: 'numeric', month:'numeric'})}</span></div><p className="text-[10px] text-slate-700 font-medium leading-snug">{r.content}</p></div>))}{!isComparing && replyingTo === c.id ? (<div className="ml-2 mt-2 bg-white border border-slate-200 p-2 rounded-lg shadow-sm animate-fadeIn"><textarea autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Escribe una respuesta..." className="w-full text-xs p-2 border border-slate-200 rounded-md focus:outline-none focus:border-rose-400 resize-none h-16 bg-slate-50" /><div className="flex justify-end gap-2 mt-2"><button onClick={() => setReplyingTo(null)} className="text-[9px] font-bold text-slate-400 uppercase hover:text-slate-600">Cancelar</button><button onClick={() => handleSendReply(c.id)} disabled={sendingReply || !replyText.trim()} className="bg-rose-600 text-white text-[9px] font-bold px-3 py-1 rounded uppercase hover:bg-rose-700 disabled:opacity-50">{sendingReply ? "Enviando..." : "Responder"}</button></div></div>) : null}</div>)}
+                            {!isComparing && (<div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50 gap-3">{!isLocked && !c.deleted_at && (<><button onClick={() => { setReplyingTo(c.id); setReplyText(""); }} className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 flex items-center gap-1">💬 Responder</button><button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button></>)}</div>)}
                         </div>
                         </div>
                     </div>
