@@ -179,7 +179,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                     </div>
                 ) : isDeadlinePassed ? (
                     <div className="bg-orange-500 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">
-                        {userRole === 'admin' ? "⏳ PLAZO CLIENTE FIN" : "⏳ PLAZO CERRADO"}
+                        {/* CAMBIO DE TEXTO AQUÍ */}
+                        {userRole === 'admin' ? "⏳ PLAZO DE LA DP FINALIZADO" : "⏳ PLAZO CERRADO"}
                     </div>
                 ) : pendingCount > 0 ? (<div className="bg-rose-600 text-white px-4 py-2 rounded-full text-xs font-black shadow-lg animate-pulse border-2 border-white">🚨 {pendingCount} PENDIENTES</div>) : myComments.length > 0 ? (<div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black shadow-lg border-2 border-white">✓ COMPLETADO</div>) : null}
              </div>
@@ -335,8 +336,9 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                           <td className="px-4 py-6 align-top">
                             {isDeadlinePassed ? (
                                 userRole === 'admin' ? (
+                                    // CAMBIO DE TEXTO AQUÍ
                                     <div className="text-[11px] font-black text-orange-600 uppercase tracking-widest mb-1 bg-orange-100 w-fit px-3 py-1.5 rounded-full shadow-sm border border-orange-200">
-                                        ⏳ PLAZO CLIENTE FIN
+                                        ⏳ PLAZO DE LA DP FINALIZADO
                                     </div>
                                 ) : (
                                     <div className="text-[11px] font-black text-white uppercase tracking-widest mb-1 bg-orange-500 w-fit px-3 py-1.5 rounded-full shadow-md border-2 border-orange-400">
@@ -381,7 +383,8 @@ const Dashboard = ({ projects = [], folders = [], onRefresh, userRole, session }
                                </div>
                            ) : isDeadlinePassed ? (
                                <div className={`absolute top-3 left-3 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white ${userRole==='admin' ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-orange-500 text-white'}`}>
-                                   {userRole === 'admin' ? "⏳ PLAZO CLIENTE FIN" : "⏳ PLAZO CERRADO"}
+                                   {/* CAMBIO DE TEXTO AQUÍ */}
+                                   {userRole === 'admin' ? "⏳ PLAZO DE LA DP FINALIZADO" : "⏳ PLAZO CERRADO"}
                                </div>
                            ) : pendingCount > 0 ? (<div className="absolute top-3 left-3 bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 animate-pulse border-2 border-white">{pendingCount} CORRECCIONES</div>) : pendingCount === 0 && myComments.length > 0 && (<div className="absolute top-3 left-3 bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-black shadow-md z-10 border-2 border-white">✓ HECHO</div>)}
                            {/* SOLO EL ADMIN PUEDE BORRAR EN LA VISTA GRID */}
