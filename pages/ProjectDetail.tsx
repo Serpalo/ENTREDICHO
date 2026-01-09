@@ -670,9 +670,17 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                         <div className="flex gap-3 items-start">
                         {!c.deleted_at && (
                             <button 
-                                onClick={() => toggleCheck(c.id, c.resolved)} 
+                                // SOLO SI ES ADMIN EJECUTA LA FUNCIÓN
+                                onClick={() => userRole === 'admin' && toggleCheck(c.id, c.resolved)} 
                                 className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                                    ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400 hover:scale-110" : "bg-white border-rose-400 hover:scale-110")}`}
+                                    ${userRole === 'admin' ? 'cursor-pointer hover:scale-110' : 'cursor-default'}
+                                    ${c.resolved 
+                                        ? "bg-emerald-500 border-emerald-500 text-white" 
+                                        : (c.is_general 
+                                            ? "bg-white border-blue-400" 
+                                            : "bg-white border-rose-400")
+                                    }`}
+                                title={userRole === 'admin' ? "Marcar como hecho/pendiente" : "Solo el administrador puede marcar esto"}
                             >
                                 {c.resolved && "✓"}
                             </button>
