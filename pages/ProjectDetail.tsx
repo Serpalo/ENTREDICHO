@@ -38,10 +38,14 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const navigate = useNavigate();
   const { projectId } = useParams();
   
-  // DATOS PRINCIPALES
+  // DATOS PRINCIPALES (VERSIÓN ACTUAL)
   const [corrections, setCorrections] = useState<any[]>([]);
   const [replies, setReplies] = useState<any[]>([]); 
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+
+  // DATOS HISTÓRICOS (PARA COMPARAR)
+  const [historicalCorrections, setHistoricalCorrections] = useState<any[]>([]);
+  const [historicalReplies, setHistoricalReplies] = useState<any[]>([]);
   
   // DATOS DE ENTRADA
   const [newNote, setNewNote] = useState("");
@@ -122,6 +126,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [isMagnifierActive, setIsMagnifierActive] = useState(false);
   const [magnifierState, setMagnifierState] = useState({ x: 0, y: 0, show: false });
 
+  // AL CAMBIAR LA VERSIÓN A COMPARAR, CARGAMOS SUS COMENTARIOS
   useEffect(() => {
     if (historicalVersions.length > 0 && !compareTargetId) {
       setCompareTargetId(String(historicalVersions[0].id));
@@ -143,7 +148,7 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- CARGA DE DATOS ---
+  // --- CARGA DE DATOS ACTUALES ---
   const loadData = async () => {
     if (!projectId) return;
     
@@ -169,6 +174,39 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         setReplies([]);
     }
   };
+
+  // --- NUEVA FUNCIÓN: CARGAR DATOS HISTÓRICOS (COMPARACIÓN) ---
+  const loadHistoricalData = async (targetId: string) => {
+      if (!targetId) return;
+      
+      const { data: hComments } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('page_id', targetId)
+          .order('created_at', { ascending: true });
+      
+      setHistoricalCorrections(hComments || []);
+
+      if (hComments && hComments.length > 0) {
+          const commentIds = hComments.map((c: any) => c.id);
+          const { data: hReplies } = await supabase
+              .from('comment_replies')
+              .select('*')
+              .in('comment_id', commentIds)
+              .order('created_at', { ascending: true });
+          setHistoricalReplies(hReplies || []);
+      } else {
+          setHistoricalReplies([]);
+      }
+  };
+
+  // Trigger para cargar histórico cuando cambia el target
+  useEffect(() => {
+      if (isComparing && compareTargetId) {
+          loadHistoricalData(compareTargetId);
+      }
+  }, [isComparing, compareTargetId]);
+
 
   const loadProjectStatus = async () => {
       if (!projectId) return; const { data } = await supabase.from('projects').select('is_approved').eq('id', projectId).single(); if (data) setIsPageApproved(data.is_approved);
@@ -458,10 +496,15 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
       return { color: finalColor, width: strokeWidth, opacity }; 
   };
 
-  const visibleCorrections = corrections.filter(c => {
-      if (userRole === 'admin') return true; 
-      return !c.deleted_at; 
-  });
+  // --- SELECCIONAR QUÉ LISTA MOSTRAR EN EL SIDEBAR ---
+  const visibleCorrections = isComparing 
+    ? historicalCorrections.filter(c => !c.deleted_at) 
+    : corrections.filter(c => {
+        if (userRole === 'admin') return true; 
+        return !c.deleted_at; 
+    });
+
+  const activeReplies = isComparing ? historicalReplies : replies;
 
   if (!project) return <div className="h-screen flex items-center justify-center text-slate-300 font-black">CARGANDO...</div>;
 
@@ -472,7 +515,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         <div className="flex gap-4 items-center">
           <button onClick={() => project?.parent_id ? navigate(`/folder/${project.parent_id}`) : navigate('/')} className="bg-slate-100 px-4 py-2 rounded-xl text-slate-600 font-bold text-xs hover:bg-slate-200 transition-colors">← VOLVER</button>
           
-          {/* --- BRANDING HEADER --- */}
           <span className="text-xl font-black italic tracking-tighter text-slate-800 uppercase mr-4">DocCheck</span>
           
           <h2 className="text-xl font-black italic uppercase text-slate-800 tracking-tighter truncate max-w-md border-l border-slate-300 pl-4">{project.name}</h2>
@@ -591,14 +633,23 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
         </div>
 
         {/* SIDEBAR DERECHA */}
-        {!isComparing && (
-            <div className="w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
-              {isLocked ? (
+        <div className={`w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-xl z-20 transition-colors duration-300 ${isComparing ? 'bg-slate-100' : 'bg-white'}`}>
+            {isComparing ? (
+                // --- CABECERA MODO COMPARACIÓN (HISTÓRICO) ---
+                <div className="p-6 border-b border-slate-200 bg-slate-100 flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase">
+                        <span>👁️ VIENDO NOTAS DE LA V{compareProject?.version}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight">Estás consultando el historial para verificar cambios. Estas notas no se pueden editar.</p>
+                </div>
+            ) : (
+                // --- CABECERA NORMAL (EDICIÓN) ---
+                isLocked ? (
                   <div className={`p-6 border-b text-center flex flex-col items-center gap-2 ${isPageApproved ? 'bg-emerald-50 border-emerald-100' : 'bg-orange-50 border-orange-100'}`}>
                       <span className="text-3xl">{isPageApproved ? "🎉" : "⏳"}</span>
                       <div><h3 className={`font-black uppercase text-sm ${isPageApproved ? 'text-emerald-800' : 'text-orange-800'}`}>{isPageApproved ? "Página Aprobada" : "Plazo Finalizado"}</h3><p className={`text-[10px] px-2 leading-tight mt-1 ${isPageApproved ? 'text-emerald-600' : 'text-orange-600'}`}>{isPageApproved ? "Edición bloqueada por aprobación." : "El tiempo para correcciones ha terminado."}</p></div>
                   </div>
-              ) : (
+                ) : (
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nueva Nota</h3>
@@ -607,20 +658,11 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                       <textarea ref={textareaRef} value={newNote} onChange={(e) => setNewNote(e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm mb-3 min-h-[80px] resize-none focus:outline-none focus:border-rose-300" placeholder="Escribe corrección..." />
                       
                       <div className="flex flex-col gap-2">
-                        {/* --- PALETA DE COLORES --- */}
                         <div className="flex gap-2 mb-1 justify-center">
                             {COLORS.map((c) => (
-                                <button 
-                                    key={c.hex} 
-                                    onClick={() => setActiveColor(c.hex)}
-                                    className={`w-6 h-6 rounded-full border-2 transition-all ${activeColor === c.hex ? 'border-slate-600 scale-110 shadow-md' : 'border-transparent hover:scale-110'}`}
-                                    style={{ backgroundColor: c.hex }}
-                                    title={c.name}
-                                />
+                                <button key={c.hex} onClick={() => setActiveColor(c.hex)} className={`w-6 h-6 rounded-full border-2 transition-all ${activeColor === c.hex ? 'border-slate-600 scale-110 shadow-md' : 'border-transparent hover:scale-110'}`} style={{ backgroundColor: c.hex }} title={c.name} />
                             ))}
                         </div>
-
-                        {/* --- BARRA DE HERRAMIENTAS --- */}
                         <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-lg">
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('pen'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'pen' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Bolígrafo"><span>✏️</span></button>
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('highlighter'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'highlighter' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Subrayador"><span>🖍️</span></button>
@@ -628,22 +670,10 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                             <button onClick={() => { setIsDrawingMode(true); setActiveTool('rect'); setNewCoords(null); }} className={`p-2 rounded-md border transition-all text-[10px] font-bold flex flex-col items-center justify-center gap-1 ${isDrawingMode && activeTool === 'rect' ? 'bg-white text-slate-800 border-slate-200 shadow-sm' : 'text-slate-500 border-transparent hover:bg-white'}`} title="Marco Cuadrado"><span>⬜</span></button>
                         </div>
                         {isDrawingMode && <button onClick={() => setIsDrawingMode(false)} className="text-[10px] text-center text-slate-400 hover:text-slate-600 font-bold uppercase py-1">Cancelar dibujo ✕</button>}
-
                         <div className="flex gap-2 mt-1">
                             <input type="file" id="adjunto" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                             <label htmlFor="adjunto" className={`px-4 py-3 rounded-lg font-black text-[9px] cursor-pointer border flex items-center gap-2 ${selectedFile?"bg-emerald-50 text-emerald-600 border-emerald-200":"bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}><span>📎</span>{selectedFile ? "LISTO" : "ADJUNTAR"}</label>
-                            
-                            {/* --- BOTONES DE GUARDAR/BORRAR ACTUALIZADOS --- */}
-                            {tempDrawings.length > 0 && (
-                                <button 
-                                    onClick={() => setTempDrawings(prev => prev.slice(0, -1))} 
-                                    className="px-3 py-3 bg-slate-200 text-slate-500 rounded-lg font-bold text-[10px] hover:bg-slate-300" 
-                                    title="Deshacer último trazo"
-                                >
-                                    ↩
-                                </button>
-                            )}
-                            
+                            {tempDrawings.length > 0 && (<button onClick={() => setTempDrawings(prev => prev.slice(0, -1))} className="px-3 py-3 bg-slate-200 text-slate-500 rounded-lg font-bold text-[10px] hover:bg-slate-300" title="Deshacer último trazo">↩</button>)}
                             <button onClick={() => handleAddNote(false)} disabled={loading} className={`flex-1 py-3 rounded-lg font-black text-[10px] uppercase text-white shadow-md transition-all ${loading?"bg-slate-400":"bg-rose-600 hover:bg-rose-700"}`} style={{ backgroundColor: loading ? undefined : activeColor }}>{loading ? "..." : "GUARDAR"}</button>
                         </div>
                         <button onClick={() => handleAddNote(true)} disabled={loading} className="w-full py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg font-black text-[10px] uppercase hover:bg-blue-100 transition-colors">MODIFICACIÓN GENERAL</button>
@@ -651,13 +681,14 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                         {tempDrawings.length > 0 && <button onClick={() => setTempDrawings([])} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold text-right underline">Borrar dibujo actual</button>}
                       </div>
                   </div>
-              )}
+                )
+            )}
               
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
+            <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${isComparing ? 'bg-slate-50 opacity-90' : 'bg-white'}`}>
                 {visibleCorrections.length===0 && <div className="mt-10 text-center text-slate-300 text-xs font-bold uppercase italic">Sin correcciones visibles</div>}
                 
                 {visibleCorrections.map((c, i) => {
-                  const myReplies = replies.filter(r => r.comment_id === c.id);
+                  const myReplies = activeReplies.filter(r => r.comment_id === c.id);
                   return (
                     <div 
                         key={c.id} 
@@ -670,17 +701,11 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                         <div className="flex gap-3 items-start">
                         {!c.deleted_at && (
                             <button 
-                                // SOLO SI ES ADMIN EJECUTA LA FUNCIÓN
-                                onClick={() => userRole === 'admin' && toggleCheck(c.id, c.resolved)} 
+                                onClick={() => !isComparing && userRole === 'admin' && toggleCheck(c.id, c.resolved)} 
                                 className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors shadow-sm 
-                                    ${userRole === 'admin' ? 'cursor-pointer hover:scale-110' : 'cursor-default'}
-                                    ${c.resolved 
-                                        ? "bg-emerald-500 border-emerald-500 text-white" 
-                                        : (c.is_general 
-                                            ? "bg-white border-blue-400" 
-                                            : "bg-white border-rose-400")
-                                    }`}
-                                title={userRole === 'admin' ? "Marcar como hecho/pendiente" : "Solo el administrador puede marcar esto"}
+                                    ${!isComparing && userRole === 'admin' ? 'cursor-pointer hover:scale-110' : 'cursor-default'}
+                                    ${c.resolved ? "bg-emerald-500 border-emerald-500 text-white" : (c.is_general ? "bg-white border-blue-400" : "bg-white border-rose-400")}`}
+                                title={isComparing ? "Modo lectura" : (userRole === 'admin' ? "Marcar como hecho/pendiente" : "Solo el administrador puede marcar esto")}
                             >
                                 {c.resolved && "✓"}
                             </button>
@@ -693,16 +718,12 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                                 <span className="text-[9px] text-slate-400 font-bold">{new Date(c.created_at).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                             
-                            {/* EMAIL DEL USUARIO */}
-                            <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">
-                                👤 {c.user_email || 'Anónimo'}
-                            </span>
+                            <span className="text-[8px] font-bold text-slate-500 uppercase block mt-0.5 mb-1">👤 {c.user_email || 'Anónimo'}</span>
 
                             <p className={`text-sm font-bold leading-snug mt-1 ${c.deleted_at ? "text-slate-500 line-through italic" : (c.resolved ? "text-emerald-800 line-through" : (c.is_general ? "text-blue-900" : "text-rose-900"))}`}>
                                 {c.content}
                             </p>
                             
-                            {/* AVISO DE BORRADO (SOLO ADMIN LO VE) */}
                             {c.deleted_at && (
                                 <div className="mt-2 bg-red-100 text-red-600 text-[9px] font-bold p-2 rounded border border-red-200">
                                     ❌ Borrado por: {c.deleted_by || 'Desconocido'} <br/>
@@ -714,7 +735,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                             {c.attachment_url && <a href={c.attachment_url} target="_blank" rel="noreferrer" className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded uppercase hover:bg-slate-200 border border-slate-200">📎 Ver Adjunto</a>}
                             </div>
 
-                            {/* --- HILO DE RESPUESTAS --- */}
                             {!c.deleted_at && (
                                 <div className="mt-4 flex flex-col gap-2">
                                     {myReplies.map(r => (
@@ -728,16 +748,9 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                                         </div>
                                     ))}
 
-                                    {/* FORMULARIO DE RESPUESTA */}
-                                    {replyingTo === c.id ? (
+                                    {!isComparing && replyingTo === c.id ? (
                                         <div className="ml-2 mt-2 bg-white border border-slate-200 p-2 rounded-lg shadow-sm animate-fadeIn">
-                                            <textarea 
-                                                autoFocus
-                                                value={replyText}
-                                                onChange={(e) => setReplyText(e.target.value)}
-                                                placeholder="Escribe una respuesta..."
-                                                className="w-full text-xs p-2 border border-slate-200 rounded-md focus:outline-none focus:border-rose-400 resize-none h-16 bg-slate-50"
-                                            />
+                                            <textarea autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Escribe una respuesta..." className="w-full text-xs p-2 border border-slate-200 rounded-md focus:outline-none focus:border-rose-400 resize-none h-16 bg-slate-50" />
                                             <div className="flex justify-end gap-2 mt-2">
                                                 <button onClick={() => setReplyingTo(null)} className="text-[9px] font-bold text-slate-400 uppercase hover:text-slate-600">Cancelar</button>
                                                 <button onClick={() => handleSendReply(c.id)} disabled={sendingReply || !replyText.trim()} className="bg-rose-600 text-white text-[9px] font-bold px-3 py-1 rounded uppercase hover:bg-rose-700 disabled:opacity-50">
@@ -749,18 +762,16 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                                 </div>
                             )}
 
-                            <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50 gap-3">
-                                {!isLocked && !c.deleted_at && (
-                                    <>
-                                        <button onClick={() => { setReplyingTo(c.id); setReplyText(""); }} className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 flex items-center gap-1">
-                                            💬 Responder
-                                        </button>
-                                        <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>
-                                            Borrar
-                                        </button>
-                                    </>
-                                )}
-                            </div>
+                            {!isComparing && (
+                                <div className="mt-2 flex justify-end pt-2 border-t border-slate-200/50 gap-3">
+                                    {!isLocked && !c.deleted_at && (
+                                        <>
+                                            <button onClick={() => { setReplyingTo(c.id); setReplyText(""); }} className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 flex items-center gap-1">💬 Responder</button>
+                                            <button onClick={() => deleteComment(c.id)} className={`text-[9px] font-black uppercase ${c.is_general ? 'text-blue-300 hover:text-blue-600' : 'text-rose-300 hover:text-rose-600'}`}>Borrar</button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         </div>
                     </div>
@@ -768,7 +779,6 @@ const ProjectDetail = ({ projects = [], onRefresh, userRole, session }: any) => 
                 })}
               </div>
             </div>
-        )}
       </div>
     </div>
   );
